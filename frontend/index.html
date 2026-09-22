@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resilient Horizon Travel Engine | AI Travel Decision Platform</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .pulse-dot { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+  <!-- HEADER -->
+  <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-md">
+          <i class="fa-solid fa-compass text-white text-xl"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-xl font-bold tracking-tight text-white">Resilient Horizon</h1>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-cyan-900/80 text-cyan-300 border border-cyan-700 font-medium">v1.0 MVP</span>
+          </div>
+          <p class="text-xs text-slate-400">AI Travel Decision Engine</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-4">
+        <!-- Agent Status Indicator -->
+        <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-full border border-slate-700">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot"></span>
+          <span class="text-xs font-semibold text-slate-200">Agent Ready</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+    <!-- HERO & REQUEST SECTION -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      
+      <!-- FORM PANEL -->
+      <div class="lg:col-span-5 bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-sliders text-blue-600"></i> Plan Your Trip
+            </h2>
+            <p class="text-xs text-slate-500">Define travel goals and constraint parameters</p>
+          </div>
+          <div class="flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-lg">
+            <input type="checkbox" id="demoModeToggle" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
+            <label for="demoModeToggle" class="text-xs font-medium text-slate-700 cursor-pointer">Demo Mode</label>
+          </div>
+        </div>
+
+        <form id="travelForm" class="space-y-4">
+          <!-- Destination -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Destination</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <i class="fa-solid fa-location-dot"></i>
+              </span>
+              <input type="text" id="destination" value="Goa" required class="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition">
+            </div>
+          </div>
+
+          <!-- Duration & Budget Grid -->
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Number of Days</label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <i class="fa-solid fa-calendar-days"></i>
+                </span>
+                <input type="number" id="days" value="4" min="1" max="14" required class="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Budget (INR ₹)</label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 font-bold">
+                  ₹
+                </span>
+                <input type="number" id="budget" value="15000" min="1000" step="500" required class="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition">
+              </div>
+            </div>
+          </div>
+
+          <!-- Interests -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Interests / Preferences</label>
+            <input type="text" id="interests" value="Beaches, Historical Places" placeholder="Comma separated, e.g. Beaches, History" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition">
+            <p class="text-[11px] text-slate-400 mt-1">Comma separated list of travel preferences</p>
+          </div>
+
+          <!-- Optional Travel Date -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Optional Travel Date</label>
+            <input type="date" id="travelDate" value="2026-10-15" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition">
+          </div>
+
+          <!-- SUBMIT BUTTON -->
+          <button type="submit" id="submitBtn" class="w-full mt-2 py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-md hover:shadow-lg transition flex items-center justify-center space-x-2 text-sm">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>Generate Resilient Itinerary</span>
+          </button>
+        </form>
+
+        <div class="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-start space-x-3">
+          <i class="fa-solid fa-circle-info text-blue-600 text-sm mt-0.5"></i>
+          <p class="text-xs text-blue-800">
+            <strong>Disruption Recovery Demo:</strong> In Demo Mode, the agent detects forecast weather disruptions for Goa outdoor activities and dynamically recovers with indoor historical alternatives.
+          </p>
+        </div>
+      </div>
+
+      <!-- INTRO / OVERVIEW CARD -->
+      <div class="lg:col-span-7 bg-slate-900 text-white rounded-2xl p-6 shadow-md border border-slate-800 flex flex-col justify-between min-h-[420px]">
+        <div>
+          <div class="flex items-center space-x-2 text-cyan-400 font-semibold text-xs uppercase tracking-wider mb-2">
+            <i class="fa-solid fa-microchip"></i> Agentic Reasoning Workflow
+          </div>
+          <h3 class="text-2xl font-bold tracking-tight text-white mb-3">Adaptive Travel Intelligence</h3>
+          <p class="text-sm text-slate-300 leading-relaxed mb-6">
+            Unlike static travel itinerary generators, the <strong>Resilient Horizon Engine</strong> acts as an autonomous agent that checks live observations, detects real-world conflicts (weather, timing, budget), discovers alternatives, and verifies constraints.
+          </p>
+
+          <!-- Workflow Steps Illustration -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 my-4">
+            <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+              <div class="text-cyan-400 text-lg mb-1"><i class="fa-solid fa-brain"></i></div>
+              <div class="text-xs font-bold text-slate-200">1. Goal Reasoning</div>
+              <div class="text-[11px] text-slate-400 mt-1">Parses constraints & selects dynamic tools</div>
+            </div>
+            <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+              <div class="text-amber-400 text-lg mb-1"><i class="fa-solid fa-triangle-exclamation"></i></div>
+              <div class="text-xs font-bold text-slate-200">2. Disruption Recovery</div>
+              <div class="text-[11px] text-slate-400 mt-1">Detects weather/cost conflicts & finds alternatives</div>
+            </div>
+            <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+              <div class="text-emerald-400 text-lg mb-1"><i class="fa-solid fa-shield-check"></i></div>
+              <div class="text-xs font-bold text-slate-200">3. Reflection & Verification</div>
+              <div class="text-[11px] text-slate-400 mt-1">Audits total cost & time feasibility</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t border-slate-800 pt-4 flex items-center justify-between text-xs text-slate-400">
+          <span><i class="fa-solid fa-bolt text-amber-400 mr-1"></i> Deterministic Demo Scenario Ready</span>
+          <span>Max Iterations: 5</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- AGENT WORKFLOW / PROGRESS SECTION -->
+    <div id="agentWorkflowSection" class="hidden bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-6">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div>
+          <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-diagram-project text-indigo-600"></i> Agent Decision Pipeline
+          </h3>
+          <p class="text-xs text-slate-500">Real-time execution status of agent reasoning and tool calls</p>
+        </div>
+        <div id="currentStageBadge" class="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium border border-blue-200 flex items-center gap-2">
+          <i class="fa-solid fa-spinner fa-spin"></i> Processing Goal
+        </div>
+      </div>
+
+      <!-- STAGES GRID -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3" id="stagesContainer">
+        <!-- Rendered by JS -->
+      </div>
+
+      <!-- CURRENT ACTIVITY BANNER -->
+      <div id="agentActivityBanner" class="bg-slate-900 text-slate-200 px-4 py-3 rounded-xl text-xs flex items-center space-x-3 shadow-inner">
+        <i class="fa-solid fa-circle-notch fa-spin text-cyan-400 text-sm"></i>
+        <span id="agentActivityText" class="font-medium">Initializing agent environment...</span>
+      </div>
+    </div>
+
+    <!-- RESULTS SECTION -->
+    <div id="resultsSection" class="hidden space-y-8">
+      
+      <!-- TRIP SUMMARY BAR -->
+      <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-6 shadow-lg border border-slate-800">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <div class="flex items-center space-x-3">
+              <h2 id="summaryDestination" class="text-2xl font-black tracking-tight">Goa</h2>
+              <span id="summaryDaysBadge" class="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-300 text-xs font-semibold border border-indigo-400/30">4 Days</span>
+            </div>
+            <p id="summaryInterests" class="text-xs text-slate-400 mt-1">Interests: Beaches, Historical Places</p>
+          </div>
+
+          <!-- METRICS GRID -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 border-t md:border-t-0 md:border-l border-slate-800 pt-4 md:pt-0 md:pl-6">
+            <div>
+              <div class="text-[11px] text-slate-400 font-medium">TOTAL ESTIMATED COST</div>
+              <div id="metricTotalCost" class="text-lg font-extrabold text-cyan-400">₹14,200</div>
+              <div id="metricRemaining" class="text-[11px] text-slate-400">Budget: ₹15,000 (Remaining: ₹800)</div>
+            </div>
+
+            <div>
+              <div class="text-[11px] text-slate-400 font-medium">ESTIMATED TRAVEL TIME</div>
+              <div id="metricTravelTime" class="text-lg font-extrabold text-slate-100">3h 45m</div>
+              <div id="metricActivityCount" class="text-[11px] text-slate-400">12 Scheduled Activities</div>
+            </div>
+
+            <div class="col-span-2 sm:col-span-1">
+              <div class="text-[11px] text-slate-400 font-medium mb-1">VERIFICATION STATUS</div>
+              <div class="flex flex-wrap gap-1.5" id="statusBadges">
+                <span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[11px] font-semibold border border-emerald-800 flex items-center gap-1">
+                  <i class="fa-solid fa-check text-xs"></i> Within Budget
+                </span>
+                <span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[11px] font-semibold border border-emerald-800 flex items-center gap-1">
+                  <i class="fa-solid fa-check text-xs"></i> Time Feasible
+                </span>
+                <span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[11px] font-semibold border border-emerald-800 flex items-center gap-1">
+                  <i class="fa-solid fa-check text-xs"></i> Verified
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESILIENCE & RECOVERY PANEL (MAIN DIFFERENTIATOR) -->
+      <div id="recoveryPanel" class="hidden bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-6 border border-amber-200 shadow-sm space-y-6">
+        <div class="flex items-center justify-between pb-4 border-b border-amber-200/60">
+          <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-lg shadow">
+              <i class="fa-solid fa-shield-virus"></i>
+            </div>
+            <div>
+              <h3 class="text-lg font-bold text-amber-950">Resilience & Disruption Recovery</h3>
+              <p class="text-xs text-amber-800">Dynamic conflict detection, outdoor weather adaptation, and constraint recalculation</p>
+            </div>
+          </div>
+          <span class="px-3 py-1 rounded-full bg-amber-200 text-amber-900 font-bold text-xs">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i> Disruption Recovered
+          </span>
+        </div>
+
+        <!-- RECOVERY COMPARISON CARDS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-white/80 backdrop-blur p-4 rounded-xl border border-amber-200/80 space-y-2">
+            <div class="text-xs font-bold text-rose-700 flex items-center gap-1.5 uppercase tracking-wide">
+              <i class="fa-solid fa-circle-xmark"></i> Original Affected Plan
+            </div>
+            <div id="recOriginalActivity" class="text-sm font-semibold text-slate-800">Calangute Beach Water Sports & Lounge</div>
+            <div id="recIssue" class="text-xs text-slate-600 bg-rose-50 p-2 rounded border border-rose-100">
+              <strong>Issue:</strong> Unfavorable weather conditions (Heavy rain alert)
+            </div>
+            <div id="recImpact" class="text-xs text-slate-500">
+              <strong>Impact:</strong> Outdoor beach activity unsafe or unviable
+            </div>
+          </div>
+
+          <div class="bg-white/80 backdrop-blur p-4 rounded-xl border border-emerald-200/80 space-y-2">
+            <div class="text-xs font-bold text-emerald-700 flex items-center gap-1.5 uppercase tracking-wide">
+              <i class="fa-solid fa-circle-check"></i> Adaptive Replacement Action
+            </div>
+            <div id="recReplacement" class="text-sm font-semibold text-slate-800">State Museum & Aguada Fort Indoor Gallery</div>
+            <div id="recRecalculation" class="text-xs text-slate-600 bg-emerald-50 p-2 rounded border border-emerald-100">
+              <strong>Recalculation:</strong> Cost adjusted to ₹400 & travel time to 30 mins
+            </div>
+            <div id="recVerification" class="text-xs text-emerald-700 font-medium">
+              <strong>Verification:</strong> Fits within ₹15,000 budget constraint
+            </div>
+          </div>
+        </div>
+
+        <!-- WHY WAS MY ITINERARY CHANGED CARD -->
+        <div class="bg-white p-5 rounded-xl border border-amber-200 shadow-xs">
+          <h4 class="text-xs font-bold text-amber-900 uppercase tracking-wider mb-1 flex items-center gap-2">
+            <i class="fa-solid fa-circle-question text-amber-600"></i> Why was my itinerary changed?
+          </h4>
+          <p id="recExplanationText" class="text-sm text-slate-700 leading-relaxed font-normal">
+            The original outdoor activity was affected by unfavorable weather. The agent searched for an alternative activity that matches your historical-interest preference and verified that the revised plan still fits the available time and budget.
+          </p>
+        </div>
+      </div>
+
+      <!-- DAY-BY-DAY ITINERARY DISPLAY -->
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-map-location-dot text-blue-600"></i> Verified Day-by-Day Itinerary
+          </h3>
+          <span class="text-xs text-slate-500">All times and costs dynamically verified</span>
+        </div>
+
+        <div id="itineraryContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Day cards rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- EVIDENCE & TECHNICAL DETAILS PANEL -->
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-box-archive text-slate-600"></i> Evidence & Tool Observations
+            </h3>
+            <p class="text-xs text-slate-500">Structured data returned by dynamic tool executions</p>
+          </div>
+          <button id="toggleDetailsBtn" class="text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition flex items-center gap-1.5">
+            <i class="fa-solid fa-code"></i> Show Technical Details
+          </button>
+        </div>
+
+        <!-- EVIDENCE TRAIL -->
+        <div id="evidenceList" class="space-y-2">
+          <!-- Rendered by JS -->
+        </div>
+
+        <!-- TECHNICAL DETAILS DRAWER -->
+        <div id="technicalDetailsDrawer" class="hidden pt-4 border-t border-slate-100 space-y-4">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div class="text-slate-400 font-medium">PROVIDER</div>
+              <div id="techProvider" class="font-bold text-slate-800">Demo Provider</div>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div class="text-slate-400 font-medium">ITERATIONS</div>
+              <div id="techIterations" class="font-bold text-slate-800">2 / 5</div>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div class="text-slate-400 font-medium">TOOLS EXECUTED</div>
+              <div id="techToolsCount" class="font-bold text-slate-800">4 Tools</div>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div class="text-slate-400 font-medium">STATUS CODE</div>
+              <div id="techStatus" class="font-bold text-emerald-600">200 OK</div>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Raw Agent Payload</label>
+            <pre id="rawJsonView" class="bg-slate-900 text-slate-100 p-4 rounded-xl text-xs font-mono overflow-x-auto max-h-60"></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="bg-white border-t border-slate-200 mt-auto py-4">
+    <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500">
+      Resilient Horizon Travel Engine &copy; 2026 &bull; AI Agentic Architecture & Disruption Recovery MVP
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
