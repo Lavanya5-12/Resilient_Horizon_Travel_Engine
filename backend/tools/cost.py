@@ -1,25 +1,23 @@
 """
-Cost Tool implementation.
+Cost Tool implementation with strict Pydantic input validation.
 Estimates total activity and travel expenses against user budget.
 """
 
 from typing import Any, Dict, List
+from pydantic import BaseModel, Field
 from backend.tools.base import BaseTool
+
+class CostInput(BaseModel):
+    activities: List[Dict[str, Any]] = Field(default_factory=list, description="List of activity items or itinerary days")
+    transit_costs: float = Field(default=0.0, ge=0.0, description="Estimated transit expenses in INR")
+    daily_food_allowance_inr: float = Field(default=1200.0, ge=0.0, description="Daily food allowance in INR")
 
 class CostTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="cost.calculateEstimate",
             description="Calculates itemized breakdown of activity entry fees, travel transit, food, and total trip budget.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "activities": {"type": "array", "items": {"type": "object"}},
-                    "transit_costs": {"type": "number"},
-                    "daily_food_allowance_inr": {"type": "number"}
-                },
-                "required": ["activities"]
-            },
+            input_model=CostInput,
             output_schema={
                 "type": "object",
                 "properties": {
@@ -31,5 +29,10 @@ class CostTool(BaseTool):
             }
         )
 
-    def execute(self, provider: Any, activities: List[Dict[str, Any]], transit_costs: float = 0.0, daily_food_allowance_inr: float = 1200.0) -> Dict[str, Any]:
-        return provider.calculate_cost(activities=activities, transit_costs=transit_costs, daily_food_allowance_inr=daily_food_allowance_inr)
+    def execute(self, provider: Any, **kwargs) -> Dict[str, Any]:
+        validated_input = CostInput.model_validate(kwargs)
+        return provider.calculate_cost(
+            activities=validated_input.activities,
+            transit_costs=validated_input.transit_costs,
+            daily_food_allowance_inr=validated_input.daily_food_allowance_inr
+        )

@@ -1,25 +1,23 @@
 """
-Places Tool implementation.
+Places Tool implementation with strict Pydantic input validation.
 Searches attractions and activities matching specified user interests.
 """
 
 from typing import Any, Dict, List
+from pydantic import BaseModel, Field
 from backend.tools.base import BaseTool
+
+class PlacesInput(BaseModel):
+    destination: str = Field(..., min_length=1, description="Target destination city or region")
+    interests: List[str] = Field(default_factory=list, description="User interest categories")
+    indoor_only: bool = Field(default=False, description="Filter only weather-safe indoor attractions")
 
 class PlacesTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="places.searchAttractions",
             description="Finds top attractions and activities in a destination filtered by user interests (e.g. Beaches, Historical Places, Indoor, Food).",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "destination": {"type": "string"},
-                    "interests": {"type": "array", "items": {"type": "string"}},
-                    "indoor_only": {"type": "boolean"}
-                },
-                "required": ["destination"]
-            },
+            input_model=PlacesInput,
             output_schema={
                 "type": "object",
                 "properties": {
@@ -43,5 +41,10 @@ class PlacesTool(BaseTool):
             }
         )
 
-    def execute(self, provider: Any, destination: str, interests: List[str] = None, indoor_only: bool = False) -> Dict[str, Any]:
-        return provider.search_places(destination=destination, interests=interests or [], indoor_only=indoor_only)
+    def execute(self, provider: Any, **kwargs) -> Dict[str, Any]:
+        validated_input = PlacesInput.model_validate(kwargs)
+        return provider.search_places(
+            destination=validated_input.destination,
+            interests=validated_input.interests,
+            indoor_only=validated_input.indoor_only
+        )

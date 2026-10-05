@@ -1,25 +1,23 @@
 """
-Route / Distance Tool implementation.
+Route / Distance Tool implementation with strict Pydantic input validation.
 Estimates travel distance and transit time between activity locations.
 """
 
 from typing import Any, Dict
+from pydantic import BaseModel, Field
 from backend.tools.base import BaseTool
+
+class RouteInput(BaseModel):
+    origin: str = Field(..., min_length=1, description="Starting location name or address")
+    destination: str = Field(..., min_length=1, description="Ending location name or address")
+    mode: str = Field(default="cab", description="Transit mode (cab, transit, walk)")
 
 class RouteTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="route.estimateTravel",
             description="Estimates transit distance and travel time in minutes between two activity locations.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "origin": {"type": "string"},
-                    "destination": {"type": "string"},
-                    "mode": {"type": "string"}
-                },
-                "required": ["origin", "destination"]
-            },
+            input_model=RouteInput,
             output_schema={
                 "type": "object",
                 "properties": {
@@ -30,5 +28,10 @@ class RouteTool(BaseTool):
             }
         )
 
-    def execute(self, provider: Any, origin: str, destination: str, mode: str = "cab") -> Dict[str, Any]:
-        return provider.estimate_route(origin=origin, destination=destination, mode=mode)
+    def execute(self, provider: Any, **kwargs) -> Dict[str, Any]:
+        validated_input = RouteInput.model_validate(kwargs)
+        return provider.estimate_route(
+            origin=validated_input.origin,
+            destination=validated_input.destination,
+            mode=validated_input.mode
+        )

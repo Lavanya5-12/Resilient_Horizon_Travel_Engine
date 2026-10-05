@@ -6,7 +6,7 @@ Pure Python frontend integrating directly with the backend agentic travel archit
 import streamlit as st
 import datetime
 import json
-import time
+import os
 from backend.agent.travel_agent import ResilientTravelAgent
 from backend.agent.planner import parse_natural_language_request
 
@@ -57,7 +57,7 @@ st.info("Resilient Horizon plans trips using evidence, detects travel disruption
 # Natural-Language Travel Request Section
 natural_prompt = st.text_area(
     "Describe your trip (Natural Language Request)",
-    placeholder="Example: Plan a 4-day Goa trip under ₹15,000 with beaches and historical places.",
+    placeholder="Example: Plan a 3-day Kakinada trip under ₹10,000 for food and sightseeing.",
     height=80
 )
 
@@ -95,21 +95,9 @@ if generate_btn:
         st.success(f"Parsed Natural Language Request: Destination = **{effective_destination}**, Days = **{effective_days}**, Budget = **₹{effective_budget:,.0f}**, Interests = **{', '.join(effective_interests)}**")
 
     # Workflow Progress Status Container
-    workflow_status = st.status("Initializing agent reasoning loop...", expanded=True)
+    workflow_status = st.status("Executing LLM Agentic Reasoning & MCP Tool Loop...", expanded=True)
     
     try:
-        workflow_status.write(f"1️⃣ **UNDERSTAND**: Parsing travel goals ({effective_destination}, {effective_days} Days, ₹{effective_budget:,.0f} Budget)...")
-        time.sleep(0.2)
-        
-        workflow_status.write(f"2️⃣ **PLAN**: Dynamic tool selection & querying attractions registry for {effective_destination}...")
-        time.sleep(0.2)
-        
-        workflow_status.write("3️⃣ **OBSERVE**: Checking forecast weather and attraction availability...")
-        time.sleep(0.2)
-        
-        workflow_status.write("4️⃣ **DETECT**: Evaluating weather conditions against scheduled activities...")
-        time.sleep(0.2)
-
         # Execute backend agent directly with user parameters
         date_str = travel_date.strftime("%Y-%m-%d") if travel_date else ""
         results = agent.run(
@@ -121,20 +109,12 @@ if generate_btn:
             demo_mode=demo_mode
         )
         
-        recovery_occurred = results.get("recovery", {}).get("occurred", False)
-        is_valid = results.get("validation", {}).get("valid", False)
+        # Display backend driven stage events
+        backend_stages = results.get("stages", [])
+        for stage in backend_stages:
+            st.write(f"• **[{stage.get('name')}]** ({stage.get('status')}): {stage.get('detail')}")
 
-        if recovery_occurred:
-            workflow_status.write("5️⃣ **RECOVER**: ⚠️ Weather disruption detected! Replacing ALL outdoor activities with indoor safe options.")
-            time.sleep(0.2)
-        else:
-            workflow_status.write("5️⃣ **RECOVER**: No disruptions detected. Current itinerary verified.")
-            time.sleep(0.2)
-            
-        workflow_status.write("6️⃣ **VERIFY**: Running post-recovery validation on revised itinerary...")
-        time.sleep(0.2)
-        
-        workflow_status.write("7️⃣ **FINAL PLAN**: Synthesizing verified resilient itinerary.")
+        is_valid = results.get("validation", {}).get("valid", False)
         
         if is_valid:
             workflow_status.update(label="✅ Agent Workflow Completed & Fully Verified!", state="complete", expanded=False)
@@ -158,6 +138,7 @@ if "travel_results" in st.session_state:
     itinerary = data.get("itinerary", [])
     evidence = data.get("evidence", [])
     explanation = data.get("explanation", "")
+    reflection = data.get("reflection", {})
     tech = data.get("technicalDetails", {})
 
     st.divider()
@@ -285,7 +266,7 @@ if "travel_results" in st.session_state:
 
     # --- EVIDENCE & TOOL OBSERVATIONS ---
     with st.expander("🔎 Evidence & Tool Observations"):
-        st.caption("Structured observations returned by dynamic tools during reasoning loop:")
+        st.caption("Structured observations returned by dynamic tools across MCP Tool Boundary:")
         for obs in evidence:
             t_name = obs.get("tool", "Unknown Tool")
             status = obs.get("status", "success")
@@ -293,40 +274,47 @@ if "travel_results" in st.session_state:
             
             if status == "warning":
                 st.warning(f"**{t_name}** | status: {status.upper()}\n\n{ev_text}")
+            elif status == "error":
+                st.error(f"**{t_name}** | status: {status.upper()}\n\n{ev_text}")
             else:
                 st.success(f"**{t_name}** | status: {status.upper()}\n\n{ev_text}")
 
     # --- TECHNICAL DETAILS ---
-    with st.expander("⚙️ Technical Details"):
+    with st.expander("⚙️ Technical Details & Saved Execution Trace"):
+        trace_file = data.get("trace_file", "None")
         st.markdown(f"""
+        - **LLM Policy Model**: `{tech.get('llmModel', 'llama3.2:3b')}`
         - **Provider Used**: `{tech.get('providerUsed', 'Demo Provider')}`
-        - **Agent Iterations Used**: `{tech.get('iterationCount', 2)} / {data.get('metrics', {}).get('maxIterations', 5)}`
-        - **Tools Executed**: `{', '.join(tech.get('toolsExecuted', []))}`
-        - **Demo Mode**: `{tech.get('isDemoMode', True)}`
+        - **Agent Iterations Used**: `{tech.get('iterationCount', 2)} / {data.get('metrics', {}).get('maxIterations', 8)}`
+        - **MCP Tools Executed**: `{', '.join(tech.get('toolsExecuted', []))}`
+        - **Saved Durable Trace File**: `{trace_file}`
         """)
         
         st.markdown("#### Simplified Architecture Flow")
         st.code("""
 User Request (Sidebar / Natural Language Prompt)
     ↓
-Streamlit (app.py)
+LLM Policy Engine (backend/agent/llm_policy.py)
     ↓
-Travel Agent (travel_agent.py)
+Validated AgentAction (backend/agent/action_models.py)
     ↓
-Dynamic Tool Selection (ToolRegistry)
+MCP Tool Boundary (backend/tools/mcp_boundary.py)
     ↓
-Weather / Places / Route / Cost / Availability Tools
+Tools (places, weather, route, availability, cost, validation)
     ↓
-Structured Observations
+Structured ToolObservations (Evidence Trail)
     ↓
-Conflict Detection & Disruption Recovery
+Disruption Recovery & Replanning (backend/agent/recovery.py)
     ↓
-Constraint Validation (Budget / Time / Preferences)
+Evidence-Based Reflection (backend/agent/reflection.py)
     ↓
-Reflection & Explanation
+Saved Durable Trace File (traces/trace_*.json)
     ↓
-Final Verified Itinerary
+Streamlit Dashboard (app.py)
         """, language="text")
+
+        st.markdown("#### Evidence Citations & Audit")
+        st.json(reflection.get("evidence_citations", []))
 
         st.markdown("#### Raw Agent Payload")
         st.json(data)

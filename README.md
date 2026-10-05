@@ -1,91 +1,117 @@
-# Resilient Horizon Travel Engine
+# Resilient Horizon Travel Engine (L2 Agent Edition)
 
-**Resilient Horizon** is an AI-powered agentic travel planning and itinerary recovery web application. Unlike simple static travel generators, Resilient Horizon dynamically evaluates real-world conditions, detects disruptions (such as weather alerts), searches for preference-matched indoor alternatives, recalculates transit times and costs, and verifies full constraint satisfaction.
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green.svg)](https://fastapi.tiangolo.com/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.30%2B-red.svg)](https://streamlit.io/)
+[![MCP-Equivalent Boundary](https://img.shields.io/badge/MCP--Equivalent-Local%20Tool%20Boundary-purple.svg)](docs/L2_AGENT_ARCHITECTURE.md)
+
+**Resilient Horizon Travel Engine** is an AI-powered L2 agentic travel planning and disruption recovery platform. The application uses a model-mediated policy layer (`DECIDE` → `VALIDATE` → `ACT` → `OBSERVE` → `REPEAT`) across an **in-process MCP-equivalent tool boundary**, featuring evidence-based reflection, durable trace recording, dynamic tool selection, and support for arbitrary travel destinations (e.g., Kakinada, Hyderabad, Mumbai, Goa).
 
 ---
 
-## Architecture Diagram
+## Architecture Overview
 
 ```mermaid
 graph TD
-    User([User Request]) --> Frontend[Manager Dashboard UI]
-    Frontend --> TravelAgent[Travel Agent Orchestrator]
-    TravelAgent --> DynamicToolSelection[Dynamic Tool Selection & Validation]
-    DynamicToolSelection --> ToolRegistry[MCP-Style Tool Registry]
+    User([User Request]) --> Streamlit[Streamlit / FastAPI UI]
+    Streamlit --> LLMPolicy[LLM Policy Engine]
+    LLMPolicy --> ActionValidation[AgentAction Pydantic Validation]
+    ActionValidation --> MCPBoundary[MCP Tool Boundary (In-Process)]
     
-    ToolRegistry --> WeatherTool[Weather Forecast Tool]
-    ToolRegistry --> PlacesTool[Places Discovery Tool]
-    ToolRegistry --> RouteTool[Route / Distance Tool]
-    ToolRegistry --> CostTool[Cost Estimation Tool]
-    ToolRegistry --> AvailabilityTool[Availability Tool]
-    ToolRegistry --> ValidationTool[Validation Tool]
+    MCPBoundary --> PlacesTool[places.searchAttractions]
+    MCPBoundary --> WeatherTool[weather.getForecast]
+    MCPBoundary --> RouteTool[route.estimateTravel]
+    MCPBoundary --> AvailabilityTool[availability.checkStatus]
+    MCPBoundary --> CostTool[cost.calculateEstimate]
+    MCPBoundary --> ValidationTool[validation.validateItinerary]
     
-    WeatherTool --> Observations[Structured Observations]
-    PlacesTool --> Observations
+    PlacesTool --> Observations[Structured Tool Observations]
+    WeatherTool --> Observations
     RouteTool --> Observations
-    CostTool --> Observations
     AvailabilityTool --> Observations
+    CostTool --> Observations
     ValidationTool --> Observations
     
-    Observations --> ConflictDetection[Conflict Detection Engine]
-    ConflictDetection --> Replanning[Disruption Recovery & Replanning]
-    Replanning --> Reflection[Constraint Validation & Reflection]
-    Reflection --> FinalItinerary[Verified Day-by-Day Itinerary]
+    Observations --> RecoveryEngine[Disruption Recovery Engine]
+    RecoveryEngine --> Reflection[Evidence-Based Reflection]
+    Reflection --> FinalAnswer[Grounded Final Itinerary & Saved Trace]
 ```
 
 ---
 
-## Key Features
+## Key L2 Features
 
-1. **Manager-Friendly Dashboard**: Clean visual stages (Understand, Plan, Observe, Detect, Recover, Verify, Final Plan) with short user-safe progress text.
-2. **MCP-Style Tool Boundaries**: Standardized input/output schemas for Weather, Places, Route, Availability, Cost, and Validation tools.
-3. **Disruption & Recovery Engine**: Detects outdoor weather conflicts, replaces affected activities with preference-matched indoor alternatives, recalculates time and cost, and verifies budget compliance.
-4. **Deterministic Demo Mode**: Built-in mock provider allowing reliable presentation of the 4-day Goa weather disruption scenario without requiring external API keys.
-5. **Transparent Evidence Trail**: Expandable section exposing raw tool observations and validation results.
-
----
-
-## Dynamic Tools Registry
-
-- `weather.getForecast`: Fetches forecast conditions and evaluates outdoor suitability.
-- `places.searchAttractions`: Finds top attractions filtered by user interests (e.g., Beaches, Historical Places, Indoor).
-- `route.estimateTravel`: Calculates transit distance and time in minutes between locations.
-- `availability.checkStatus`: Verifies attraction opening hours and slot status.
-- `cost.calculateEstimate`: Itemizes activity, transport, and food expenses.
-- `validation.validateItinerary`: Audits budget compliance, duration feasibility, preference matching, and weather suitability.
+1. **Genuine LLM Policy Layer**: Model-mediated tool decision making supporting Ollama (`llama3.2:3b`), OpenAI API, and deterministic fallback solver.
+2. **Strict Pydantic Action Schema**: `AgentAction(action="tool"|"finish", tool_name, arguments, reasoning)` validated before execution. Rejects unknown tools and malformed parameters safely.
+3. **MCP Tool Boundary Abstraction**: All 6 dynamic tools (`places`, `weather`, `route`, `availability`, `cost`, `validation`) execute strictly across an in-process `MCPToolBoundary` providing tool discovery, input validation, and structured observations without requiring a networked JSON-RPC transport process.
+4. **Arbitrary Destination Support**: Supports any city (e.g. Kakinada, Hyderabad, Mumbai, Delhi, Jaipur, Goa) without falling back to hardcoded defaults.
+5. **Durable Agent Traces**: Every execution trace is saved to `traces/trace_{session_id}_{dest}.json`.
+6. **Live Weather Integration**: `RealProvider` queries live real-world weather data via Open-Meteo HTTP API with timeout and error handling.
+7. **Deterministic Goa Demo Mode**: Reliable reproduction of weather disruptions and indoor replacements.
+8. **Automated Pytest Suite**: 18 unit and integration tests covering recovery, arbitrary destinations, action validation, tool failures, budget checks, and API endpoints.
 
 ---
 
-## Quick Start & Execution
+## Registered MCP Tool Catalog
 
-### Prerequisites
-- Python 3.10+ (FastAPI & Uvicorn included)
-
-### Running the Application
-
-1. **Start Backend Server**:
-   ```bash
-   python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
-   ```
-
-2. **Open Dashboard**:
-   Open your browser at `http://127.0.0.1:8000/`.
+| Tool Name | Description | Input Schema |
+| :--- | :--- | :--- |
+| `places.searchAttractions` | Finds attractions matching user interests | `destination: str`, `interests: list`, `indoor_only: bool` |
+| `weather.getForecast` | Evaluates forecast conditions and outdoor suitability | `destination: str`, `day: int`, `date: str` |
+| `route.estimateTravel` | Calculates transit distance and time | `origin: str`, `destination: str`, `mode: str` |
+| `availability.checkStatus` | Verifies attraction opening hours and capacity | `attraction_name: str`, `date: str`, `time_of_day: str` |
+| `cost.calculateEstimate` | Computes itemized activity, transit, and food costs | `activities: list`, `transit_costs: float` |
+| `validation.validateItinerary` | Audits budget, schedule, and weather compliance | `itinerary: list`, `budget_inr: float`, `interests: list` |
 
 ---
 
-## 2-Minute Demo Flow
+## Installation & Setup
 
-1. Leave default input parameters:
-   - **Destination**: Goa
-   - **Days**: 4
-   - **Budget**: ₹15,000
-   - **Interests**: Beaches, Historical Places
-   - **Demo Mode**: ON
-2. Click **"Generate Resilient Itinerary"**.
-3. Watch the **7 Agent Stages** execute in real-time.
-4. Observe the **Resilience & Recovery** section:
-   - **Original**: Outdoor Beach Activity on Day 2.
-   - **Issue Detected**: Unfavorable weather (heavy rain alert).
-   - **Replacement**: Historical Museum & Indoor Heritage Gallery.
-   - **Verification**: Recalculated total (₹14,200) remains within ₹15,000 budget.
-5. Expand **Evidence & Technical Details** to inspect raw tool observations.
+### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Optional: Run Local Ollama LLM Model
+```bash
+ollama pull llama3.2:3b
+ollama run llama3.2:3b
+```
+*(If Ollama is not running, the policy engine automatically uses its built-in solver seamlessly).*
+
+---
+
+## Running the Application
+
+### Option A: Run Streamlit User Interface
+```bash
+streamlit run app.py
+```
+Open your browser at **`http://localhost:8501`**.
+
+### Option B: Run FastAPI REST API Server
+```bash
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+```
+API Documentation available at **`http://localhost:8000/docs`**.
+
+---
+
+## Running Automated Tests
+
+Run the complete 18-test suite with Pytest:
+```bash
+python -m pytest -v
+```
+
+---
+
+## Example Execution Scenarios
+
+### Scenario 1: Kakinada Arbitrary Destination
+- **Input**: `"Plan a 3-day Kakinada trip under ₹10,000 for food and sightseeing."`
+- **Output**: 3-day Kakinada itinerary, budget verified against ₹10,000, evidence citations saved to `traces/trace_*_kakinada.json`.
+
+### Scenario 2: Goa Disruption Recovery (Demo Mode)
+- **Input**: Goa 4 days, Budget ₹15,000.
+- **Output**: Detects Day 2 weather alert, replaces outdoor beach activity with indoor museum, verifies revised cost (₹13,700), and outputs evidence explanation.

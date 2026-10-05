@@ -2,6 +2,7 @@
 Recovery Engine.
 Detects travel disruptions (e.g. weather conflicts), searches for matching indoor/safe alternatives,
 recalculates time and budget, and replaces ALL affected activities with verified weather-safe options.
+Routes ALL tool invocations strictly through the MCP Tool Boundary.
 """
 
 from typing import Any, Dict, List, Tuple
@@ -12,7 +13,8 @@ class RecoveryEngine:
         itinerary: List[Dict[str, Any]],
         weather_observations: List[Dict[str, Any]],
         provider: Any,
-        user_interests: List[str]
+        user_interests: List[str],
+        mcp_boundary: Any
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         
         recovery_info = {
@@ -44,12 +46,18 @@ class RecoveryEngine:
                 target_dest = day_weather.get("destination", "Destination")
                 condition_name = day_weather.get("condition", "unfavorable weather")
 
-                # Fetch indoor alternatives matching user interests
-                alt_response = provider.search_places(
-                    destination=target_dest,
-                    interests=user_interests,
-                    indoor_only=True
+                # ROUTE THROUGH MCP TOOL BOUNDARY (No direct provider calls)
+                obs_places = mcp_boundary.invoke_tool(
+                    tool_name="places.searchAttractions",
+                    arguments={
+                        "destination": target_dest,
+                        "interests": user_interests,
+                        "indoor_only": True
+                    },
+                    provider=provider
                 )
+                
+                alt_response = obs_places.data if obs_places.status != "error" else {}
                 indoor_attractions = alt_response.get("attractions", [])
 
                 if not indoor_attractions:
@@ -83,11 +91,16 @@ class RecoveryEngine:
                         replacement = indoor_attractions[alt_idx % len(indoor_attractions)]
                         alt_idx += 1
 
-                        # Estimate transit for replacement activity
-                        route_info = provider.estimate_route(
-                            origin=day_item.get("morning", {}).get("location", "Hotel"),
-                            destination=replacement.get("location", f"Central {target_dest}")
+                        # ROUTE THROUGH MCP TOOL BOUNDARY FOR ROUTE ESTIMATION
+                        obs_route = mcp_boundary.invoke_tool(
+                            tool_name="route.estimateTravel",
+                            arguments={
+                                "origin": day_item.get("morning", {}).get("location", "Hotel"),
+                                "destination": replacement.get("location", f"Central {target_dest}")
+                            },
+                            provider=provider
                         )
+                        route_info = obs_route.data if obs_route.status != "error" else {}
 
                         new_cost = float(replacement.get("estimated_cost_inr", 350.0))
                         new_time = int(route_info.get("travel_time_mins", 25))
