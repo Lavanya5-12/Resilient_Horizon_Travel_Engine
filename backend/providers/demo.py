@@ -1,3 +1,4 @@
+
 """
 Demo Data Provider.
 Provides realistic, deterministic travel observations and weather disruption scenarios.
@@ -6,6 +7,7 @@ Clearly separates mock/demo observations from agent reasoning logic.
 
 from typing import Any, Dict, List
 
+
 class DemoProvider:
     def __init__(self):
         self.is_demo = True
@@ -13,9 +15,11 @@ class DemoProvider:
 
     def get_weather_forecast(self, destination: str, date: str = "", day: int = 1) -> Dict[str, Any]:
         dest_clean = destination.strip().lower()
+
         if "goa" in dest_clean:
-            # Day 2 has unfavorable weather (heavy rain alert) to demonstrate disruption recovery in Goa
-            if day == 2 or "day 2" in str(date).lower():
+            # Only numeric Day 2 has unfavorable weather.
+            # The numeric day is authoritative; free-text dates must not override it.
+            if day == 2:
                 return {
                     "destination": destination,
                     "day": day,
@@ -46,7 +50,7 @@ class DemoProvider:
     def search_places(self, destination: str, interests: List[str], indoor_only: bool = False) -> Dict[str, Any]:
         dest_clean = destination.strip().lower()
         interests_lower = [i.lower() for i in interests] if interests else []
-        
+
         attractions = []
 
         if "goa" in dest_clean:
@@ -181,7 +185,14 @@ class DemoProvider:
 
         # Filter by interests if specified
         if interests and not indoor_only:
-            filtered = [a for a in attractions if any(i.lower() in a.get("category", "").lower() or i.lower() in a.get("name", "").lower() for i in interests)]
+            filtered = [
+                a for a in attractions
+                if any(
+                    i.lower() in a.get("category", "").lower()
+                    or i.lower() in a.get("name", "").lower()
+                    for i in interests
+                )
+            ]
             if filtered:
                 attractions = filtered
 
@@ -227,7 +238,7 @@ class DemoProvider:
         all_activities = []
         issues = []
         weather_valid = True
-        
+
         weather_map = {w.get("day"): w for w in (weather_conditions or [])}
 
         for day_item in itinerary:
@@ -245,7 +256,9 @@ class DemoProvider:
                     if weather_for_day and not weather_for_day.get("suitableForOutdoor", True):
                         if act.get("is_outdoor", False):
                             weather_valid = False
-                            issues.append(f"Day {day_num} {slot}: Activity '{act.get('activity')}' is outdoor but weather condition is '{weather_for_day.get('condition')}'")
+                            issues.append(
+                                f"Day {day_num} {slot}: Activity '{act.get('activity')}' is outdoor but weather condition is '{weather_for_day.get('condition')}'"
+                            )
 
         # Transit estimation (~ 400 per day)
         days = len(itinerary)
