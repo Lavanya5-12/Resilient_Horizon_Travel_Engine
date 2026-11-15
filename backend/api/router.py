@@ -1,24 +1,57 @@
+
 """
 API Router for Resilient Horizon Travel Engine.
-Defines endpoints for travel planning, health checks, and tool registry schemas.
+Defines endpoints for travel planning, health checks, and MCP tool schemas.
 """
+
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+
 from backend.agent.travel_agent import ResilientTravelAgent
+
 
 router = APIRouter(prefix="/api", tags=["Travel Engine"])
 
+# Reuse one agent instance for API requests.
 agent_instance = ResilientTravelAgent()
 
+
 class PlanRequest(BaseModel):
-    destination: str = Field("Goa", description="Target destination city or region")
-    days: int = Field(4, ge=1, le=14, description="Duration in days")
-    budget: float = Field(15000.0, ge=1000.0, description="Total budget in INR")
-    interests: List[str] = Field(default_factory=lambda: ["Beaches", "Historical Places"], description="User travel preferences")
-    travelDate: Optional[str] = Field(None, description="Optional target travel date")
-    demoMode: bool = Field(True, description="Enable deterministic demo mode for disruption simulation")
+    destination: str = Field(
+        "Goa",
+        description="Target destination city or region"
+    )
+
+    days: int = Field(
+        4,
+        ge=1,
+        le=14,
+        description="Duration in days"
+    )
+
+    budget: float = Field(
+        15000.0,
+        ge=1000.0,
+        description="Total budget in INR"
+    )
+
+    interests: List[str] = Field(
+        default_factory=lambda: ["Beaches", "Historical Places"],
+        description="User travel preferences"
+    )
+
+    travelDate: Optional[str] = Field(
+        None,
+        description="Optional target travel date"
+    )
+
+    demoMode: bool = Field(
+        True,
+        description="Enable deterministic demo mode for disruption simulation"
+    )
+
 
 @router.get("/health")
 def health_check():
@@ -29,13 +62,25 @@ def health_check():
         "version": "1.0.0"
     }
 
+
 @router.get("/tools")
 def get_registered_tools():
-    """Returns metadata and MCP schemas for all registered dynamic tools."""
-    return {
-        "count": len(agent_instance.registry.list_tools()),
-        "tools": agent_instance.registry.list_tools()
-    }
+    """Returns tool metadata and schemas discovered from the MCP server."""
+
+    try:
+        tools = agent_instance.mcp.list_mcp_tools()
+
+        return {
+            "count": len(tools),
+            "tools": tools
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"MCP tool discovery failed: {str(e)}"
+        )
+
 
 @router.post("/travel/plan")
 def create_travel_plan(req: PlanRequest):
@@ -48,6 +93,11 @@ def create_travel_plan(req: PlanRequest):
             travel_date=req.travelDate,
             demo_mode=req.demoMode
         )
+
         return result
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Agent execution failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Agent execution failed: {str(e)}"
+        )

@@ -1,0 +1,882 @@
+{
+  "session_id": "251bacf8",
+  "created_at": "2026-11-15T12:13:02.183822",
+  "completed_at": "2026-11-15T12:25:47.919714",
+  "request": {
+    "destination": "Goa",
+    "days": 4,
+    "budget": 15000.0,
+    "interests": [
+      "Beaches",
+      "Historical Places"
+    ],
+    "travel_date": null,
+    "demo_mode": true
+  },
+  "iteration_steps": [
+    {
+      "iteration": 1,
+      "reasoning": "Querying place discovery tool to find candidate attractions for Goa.",
+      "action": "tool",
+      "tool_name": "places.searchAttractions",
+      "arguments": {
+        "destination": "Goa",
+        "interests": [
+          "Beaches",
+          "Historical Places"
+        ]
+      },
+      "is_valid": true,
+      "validation_errors": [],
+      "observation": {
+        "tool": "places.searchAttractions",
+        "status": "success",
+        "destination": "Goa",
+        "data": {
+          "destination": "Goa",
+          "count": 10,
+          "attractions": [
+            {
+              "id": "goa_01",
+              "name": "Fort Aguada Exploration",
+              "category": "Historical Places",
+              "is_outdoor": false,
+              "estimated_cost_inr": 350.0,
+              "duration_hours": 2.5,
+              "location": "Candolim, Goa"
+            },
+            {
+              "id": "goa_02",
+              "name": "Calangute Beach Water Sports",
+              "category": "Beaches",
+              "is_outdoor": true,
+              "estimated_cost_inr": 1500.0,
+              "duration_hours": 3.0,
+              "location": "North Goa"
+            },
+            {
+              "id": "goa_03",
+              "name": "Baga Beach Boardwalk & Sunset",
+              "category": "Beaches",
+              "is_outdoor": true,
+              "estimated_cost_inr": 800.0,
+              "duration_hours": 2.5,
+              "location": "Baga, Goa"
+            },
+            {
+              "id": "goa_04",
+              "name": "Anjuna Flea Market & Heritage Walk",
+              "category": "Historical Places",
+              "is_outdoor": false,
+              "estimated_cost_inr": 300.0,
+              "duration_hours": 2.5,
+              "location": "Anjuna, Goa"
+            },
+            {
+              "id": "goa_05",
+              "name": "Miramar Beach & Water Sports Lounge",
+              "category": "Beaches",
+              "is_outdoor": true,
+              "estimated_cost_inr": 1200.0,
+              "duration_hours": 3.0,
+              "location": "Panaji, Goa"
+            },
+            {
+              "id": "goa_06",
+              "name": "Mandovi River Cruise & Dinner",
+              "category": "Historical Places",
+              "is_outdoor": false,
+              "estimated_cost_inr": 1000.0,
+              "duration_hours": 2.5,
+              "location": "Panaji, Goa"
+            },
+            {
+              "id": "goa_07",
+              "name": "Old Goa Basilica of Bom Jesus",
+              "category": "Historical Places",
+              "is_outdoor": false,
+              "estimated_cost_inr": 250.0,
+              "duration_hours": 2.0,
+              "location": "Old Goa"
+            },
+            {
+              "id": "goa_08",
+              "name": "Panaji Latin Quarter (Fontainhas) Walk",
+              "category": "Historical Places",
+              "is_outdoor": false,
+              "estimated_cost_inr": 400.0,
+              "duration_hours": 2.0,
+              "location": "Panaji, Goa"
+            },
+            {
+              "id": "goa_09",
+              "name": "Spice Plantation Tour & Lunch",
+              "category": "Historical Places",
+              "is_outdoor": false,
+              "estimated_cost_inr": 800.0,
+              "duration_hours": 3.0,
+              "location": "Ponda, Goa"
+            },
+            {
+              "id": "goa_10",
+              "name": "Colva Beach Relaxation",
+              "category": "Beaches",
+              "is_outdoor": true,
+              "estimated_cost_inr": 500.0,
+              "duration_hours": 2.5,
+              "location": "Colva, Goa"
+            }
+          ]
+        },
+        "evidence": "Found 10 attractions.",
+        "timestamp": "2026-11-15T12:13:20.422553"
+      },
+      "status": "completed"
+    },
+    {
+      "iteration": 2,
+      "reasoning": "Weather forecast for Goa on day 1 is not available yet. Let's check the weather conditions for Goa.",
+      "action": "tool",
+      "tool_name": "weather.getForecast",
+      "arguments": {
+        "destination": "Goa",
+        "date": "",
+        "day": 1
+      },
+      "is_valid": true,
+      "validation_errors": [],
+      "observation": {
+        "tool": "weather.getForecast",
+        "status": "success",
+        "destination": "Goa",
+        "data": {
+          "destination": "Goa",
+          "day": 1,
+          "condition": "sunny",
+          "temperature_c": 31.0,
+          "suitableForOutdoor": true,
+          "evidence": "Weather forecast for Goa (Day 1) is clear and sunny. Outdoor activities suitable."
+        },
+        "evidence": "Weather forecast for Goa (Day 1) is clear and sunny. Outdoor activities suitable.",
+        "timestamp": "2026-11-15T12:13:33.575845"
+      },
+      "status": "completed"
+    },
+    {
+      "iteration": 3,
+      "reasoning": "The current weather forecast for Goa is clear and sunny, making it suitable for outdoor activities. However, the availability of beaches in Goa may vary depending on the day and time of visit. Therefore, it is recommended to check the availability of beaches in Goa before planning the itinerary.",
+      "action": "tool",
+      "tool_name": "availability.checkStatus",
+      "arguments": {
+        "attraction_name": "Beaches in Goa",
+        "date": "Flexible",
+        "time_of_day": "Afternoon"
+      },
+      "is_valid": true,
+      "validation_errors": [],
+      "observation": {
+        "tool": "availability.checkStatus",
+        "status": "success",
+        "destination": "Destination",
+        "data": {
+          "attraction_name": "Beaches in Goa",
+          "is_open": true,
+          "operating_hours": "09:00 AM - 06:00 PM",
+          "capacity_status": "Normal availability",
+          "evidence": "Confirmed Beaches in Goa is open during Afternoon on scheduled date."
+        },
+        "evidence": "Confirmed Beaches in Goa is open during Afternoon on scheduled date.",
+        "timestamp": "2026-11-15T12:13:44.321299"
+      },
+      "status": "completed"
+    },
+    {
+      "iteration": 4,
+      "reasoning": "Checking weather forecast for Goa, Day 2. Previously retrieved forecast days: [1].",
+      "action": "tool",
+      "tool_name": "weather.getForecast",
+      "arguments": {
+        "destination": "Goa",
+        "day": 2
+      },
+      "is_valid": true,
+      "validation_errors": [],
+      "observation": {
+        "tool": "weather.getForecast",
+        "status": "warning",
+        "destination": "Goa",
+        "data": {
+          "destination": "Goa",
+          "day": 2,
+          "condition": "heavy_rain_warning",
+          "temperature_c": 26.5,
+          "suitableForOutdoor": false,
+          "evidence": "IMD Weather Alert: High wind & heavy monsoon showers expected on Day 2 in North Goa. Outdoor beach & water sports activities restricted."
+        },
+        "evidence": "IMD Weather Alert: High wind & heavy monsoon showers expected on Day 2 in North Goa. Outdoor beach & water sports activities restricted.",
+        "timestamp": "2026-11-15T12:15:12.580204"
+      },
+      "status": "completed"
+    },
+    {
+      "iteration": 5,
+      "reasoning": "Checking weather forecast for Goa, Day 3. Previously retrieved forecast days: [1, 2].",
+      "action": "tool",
+      "tool_name": "weather.getForecast",
+      "arguments": {
+        "destination": "Goa",
+        "day": 3
+      },
+      "is_valid": true,
+      "validation_errors": [],
+      "observation": {
+        "tool": "weather.getForecast",
+        "status": "success",
+        "destination": "Goa",
+        "data": {
+          "destination": "Goa",
+          "day": 3,
+          "condition": "sunny",
+          "temperature_c": 31.0,
+          "suitableForOutdoor": true,
+          "evidence": "Weather forecast for Goa (Day 3) is clear and sunny. Outdoor activities suitable."
+        },
+        "evidence": "Weather forecast for Goa (Day 3) is clear and sunny. Outdoor activities suitable.",
+        "timestamp": "2026-11-15T12:25:02.997139"
+      },
+      "status": "completed"
+    },
+    {
+      "iteration": 6,
+      "reasoning": "Checking weather forecast for Goa, Day 4. Previously retrieved forecast days: [1, 2, 3].",
+      "action": "tool",
+      "tool_name": "weather.getForecast",
+      "arguments": {
+        "destination": "Goa",
+        "day": 4
+      },
+      "is_valid": true,
+      "validation_errors": [],
+      "observation": {
+        "tool": "weather.getForecast",
+        "status": "success",
+        "destination": "Goa",
+        "data": {
+          "destination": "Goa",
+          "day": 4,
+          "condition": "sunny",
+          "temperature_c": 31.0,
+          "suitableForOutdoor": true,
+          "evidence": "Weather forecast for Goa (Day 4) is clear and sunny. Outdoor activities suitable."
+        },
+        "evidence": "Weather forecast for Goa (Day 4) is clear and sunny. Outdoor activities suitable.",
+        "timestamp": "2026-11-15T12:25:20.484935"
+      },
+      "status": "completed"
+    },
+    {
+      "iteration": 7,
+      "reasoning": "Validating itinerary against budget, interests, and constraints.",
+      "action": "tool",
+      "tool_name": "validation.validateItinerary",
+      "arguments": {
+        "itinerary": [
+          {
+            "day": 1,
+            "title": "Day 1: Goa Beaches",
+            "morning": {
+              "activity": "Fort Aguada Exploration",
+              "location": "Candolim, Goa",
+              "cost_inr": 350.0,
+              "travel_time_mins": 25,
+              "category": "Historical Places",
+              "is_outdoor": false
+            },
+            "afternoon": {
+              "activity": "Calangute Beach Water Sports",
+              "location": "North Goa",
+              "cost_inr": 1500.0,
+              "travel_time_mins": 25,
+              "category": "Beaches",
+              "is_outdoor": true
+            },
+            "evening": {
+              "activity": "Baga Beach Boardwalk & Sunset",
+              "location": "Baga, Goa",
+              "cost_inr": 800.0,
+              "travel_time_mins": 25,
+              "category": "Beaches",
+              "is_outdoor": true
+            }
+          },
+          {
+            "day": 2,
+            "title": "Day 2: Goa Beaches",
+            "morning": {
+              "activity": "Anjuna Flea Market & Heritage Walk",
+              "location": "Anjuna, Goa",
+              "cost_inr": 300.0,
+              "travel_time_mins": 30,
+              "category": "Historical Places",
+              "is_outdoor": false
+            },
+            "afternoon": {
+              "activity": "State Museum & Aguada Fort Indoor Gallery",
+              "location": "Panaji / Candolim, Goa",
+              "cost_inr": 400.0,
+              "travel_time_mins": 30,
+              "category": "Historical Places",
+              "is_outdoor": false,
+              "was_recovered": true,
+              "original_activity": "Miramar Beach & Water Sports Lounge",
+              "recovery_evidence": {
+                "places_tool": "places.searchAttractions",
+                "route_tool": "route.estimateTravel",
+                "indoor_status_confirmed": true,
+                "route_estimate_confirmed": true
+              }
+            },
+            "evening": {
+              "activity": "Mandovi River Cruise & Dinner",
+              "location": "Panaji, Goa",
+              "cost_inr": 1000.0,
+              "travel_time_mins": 30,
+              "category": "Historical Places",
+              "is_outdoor": false
+            }
+          },
+          {
+            "day": 3,
+            "title": "Day 3: Goa Beaches",
+            "morning": {
+              "activity": "Old Goa Basilica of Bom Jesus",
+              "location": "Old Goa",
+              "cost_inr": 250.0,
+              "travel_time_mins": 35,
+              "category": "Historical Places",
+              "is_outdoor": false
+            },
+            "afternoon": {
+              "activity": "Panaji Latin Quarter (Fontainhas) Walk",
+              "location": "Panaji, Goa",
+              "cost_inr": 400.0,
+              "travel_time_mins": 35,
+              "category": "Historical Places",
+              "is_outdoor": false
+            },
+            "evening": {
+              "activity": "Spice Plantation Tour & Lunch",
+              "location": "Ponda, Goa",
+              "cost_inr": 800.0,
+              "travel_time_mins": 35,
+              "category": "Historical Places",
+              "is_outdoor": false
+            }
+          },
+          {
+            "day": 4,
+            "title": "Day 4: Goa Beaches",
+            "morning": {
+              "activity": "Colva Beach Relaxation",
+              "location": "Colva, Goa",
+              "cost_inr": 500.0,
+              "travel_time_mins": 40,
+              "category": "Beaches",
+              "is_outdoor": true
+            },
+            "afternoon": {
+              "activity": "Historical Places Experience in Goa (Day 4 Afternoon)",
+              "location": "Goa City Center",
+              "cost_inr": 500.0,
+              "travel_time_mins": 40,
+              "category": "Historical Places",
+              "is_outdoor": false
+            },
+            "evening": {
+              "activity": "Leisure & Dining Experience in Goa (Day 4 Evening)",
+              "location": "Goa City Center",
+              "cost_inr": 500.0,
+              "travel_time_mins": 40,
+              "category": "Leisure & Dining",
+              "is_outdoor": false
+            }
+          }
+        ],
+        "budget_inr": 15000.0,
+        "interests": [
+          "Beaches",
+          "Historical Places"
+        ]
+      },
+      "is_valid": true,
+      "validation_errors": [],
+      "observation": {
+        "tool": "validation.validateItinerary",
+        "status": "success",
+        "destination": "Destination",
+        "data": {
+          "valid": true,
+          "budgetValid": true,
+          "timeValid": true,
+          "preferencesValid": true,
+          "availabilityValid": true,
+          "weatherValid": true,
+          "calculatedTotalCost": 13700.0,
+          "remainingBudget": 1300.0,
+          "issues": []
+        },
+        "evidence": "Validated itinerary. Total cost: INR 13,700. Valid=True.",
+        "timestamp": "2026-11-15T12:25:37.527950"
+      },
+      "status": "completed"
+    },
+    {
+      "iteration": 8,
+      "reasoning": "Weather coverage is complete. Proceeding to final itinerary validation.",
+      "action": "finish",
+      "tool_name": null,
+      "arguments": {},
+      "is_valid": true,
+      "validation_errors": [],
+      "status": "finished"
+    }
+  ],
+  "observations": [
+    {
+      "tool": "places.searchAttractions",
+      "status": "success",
+      "destination": "Goa",
+      "data": {
+        "destination": "Goa",
+        "count": 10,
+        "attractions": [
+          {
+            "id": "goa_01",
+            "name": "Fort Aguada Exploration",
+            "category": "Historical Places",
+            "is_outdoor": false,
+            "estimated_cost_inr": 350.0,
+            "duration_hours": 2.5,
+            "location": "Candolim, Goa"
+          },
+          {
+            "id": "goa_02",
+            "name": "Calangute Beach Water Sports",
+            "category": "Beaches",
+            "is_outdoor": true,
+            "estimated_cost_inr": 1500.0,
+            "duration_hours": 3.0,
+            "location": "North Goa"
+          },
+          {
+            "id": "goa_03",
+            "name": "Baga Beach Boardwalk & Sunset",
+            "category": "Beaches",
+            "is_outdoor": true,
+            "estimated_cost_inr": 800.0,
+            "duration_hours": 2.5,
+            "location": "Baga, Goa"
+          },
+          {
+            "id": "goa_04",
+            "name": "Anjuna Flea Market & Heritage Walk",
+            "category": "Historical Places",
+            "is_outdoor": false,
+            "estimated_cost_inr": 300.0,
+            "duration_hours": 2.5,
+            "location": "Anjuna, Goa"
+          },
+          {
+            "id": "goa_05",
+            "name": "Miramar Beach & Water Sports Lounge",
+            "category": "Beaches",
+            "is_outdoor": true,
+            "estimated_cost_inr": 1200.0,
+            "duration_hours": 3.0,
+            "location": "Panaji, Goa"
+          },
+          {
+            "id": "goa_06",
+            "name": "Mandovi River Cruise & Dinner",
+            "category": "Historical Places",
+            "is_outdoor": false,
+            "estimated_cost_inr": 1000.0,
+            "duration_hours": 2.5,
+            "location": "Panaji, Goa"
+          },
+          {
+            "id": "goa_07",
+            "name": "Old Goa Basilica of Bom Jesus",
+            "category": "Historical Places",
+            "is_outdoor": false,
+            "estimated_cost_inr": 250.0,
+            "duration_hours": 2.0,
+            "location": "Old Goa"
+          },
+          {
+            "id": "goa_08",
+            "name": "Panaji Latin Quarter (Fontainhas) Walk",
+            "category": "Historical Places",
+            "is_outdoor": false,
+            "estimated_cost_inr": 400.0,
+            "duration_hours": 2.0,
+            "location": "Panaji, Goa"
+          },
+          {
+            "id": "goa_09",
+            "name": "Spice Plantation Tour & Lunch",
+            "category": "Historical Places",
+            "is_outdoor": false,
+            "estimated_cost_inr": 800.0,
+            "duration_hours": 3.0,
+            "location": "Ponda, Goa"
+          },
+          {
+            "id": "goa_10",
+            "name": "Colva Beach Relaxation",
+            "category": "Beaches",
+            "is_outdoor": true,
+            "estimated_cost_inr": 500.0,
+            "duration_hours": 2.5,
+            "location": "Colva, Goa"
+          }
+        ]
+      },
+      "evidence": "Found 10 attractions.",
+      "timestamp": "2026-11-15T12:13:20.422553"
+    },
+    {
+      "tool": "weather.getForecast",
+      "status": "success",
+      "destination": "Goa",
+      "data": {
+        "destination": "Goa",
+        "day": 1,
+        "condition": "sunny",
+        "temperature_c": 31.0,
+        "suitableForOutdoor": true,
+        "evidence": "Weather forecast for Goa (Day 1) is clear and sunny. Outdoor activities suitable."
+      },
+      "evidence": "Weather forecast for Goa (Day 1) is clear and sunny. Outdoor activities suitable.",
+      "timestamp": "2026-11-15T12:13:33.575845"
+    },
+    {
+      "tool": "availability.checkStatus",
+      "status": "success",
+      "destination": "Destination",
+      "data": {
+        "attraction_name": "Beaches in Goa",
+        "is_open": true,
+        "operating_hours": "09:00 AM - 06:00 PM",
+        "capacity_status": "Normal availability",
+        "evidence": "Confirmed Beaches in Goa is open during Afternoon on scheduled date."
+      },
+      "evidence": "Confirmed Beaches in Goa is open during Afternoon on scheduled date.",
+      "timestamp": "2026-11-15T12:13:44.321299"
+    },
+    {
+      "tool": "weather.getForecast",
+      "status": "warning",
+      "destination": "Goa",
+      "data": {
+        "destination": "Goa",
+        "day": 2,
+        "condition": "heavy_rain_warning",
+        "temperature_c": 26.5,
+        "suitableForOutdoor": false,
+        "evidence": "IMD Weather Alert: High wind & heavy monsoon showers expected on Day 2 in North Goa. Outdoor beach & water sports activities restricted."
+      },
+      "evidence": "IMD Weather Alert: High wind & heavy monsoon showers expected on Day 2 in North Goa. Outdoor beach & water sports activities restricted.",
+      "timestamp": "2026-11-15T12:15:12.580204"
+    },
+    {
+      "tool": "places.searchAttractions",
+      "status": "success",
+      "destination": "Goa",
+      "data": {
+        "destination": "Goa",
+        "count": 2,
+        "attractions": [
+          {
+            "id": "goa_hist_indoor_01",
+            "name": "State Museum & Aguada Fort Indoor Gallery",
+            "category": "Historical Places",
+            "is_outdoor": false,
+            "estimated_cost_inr": 400.0,
+            "duration_hours": 2.5,
+            "location": "Panaji / Candolim, Goa",
+            "description": "Historical exhibition of Goan heritage, naval history, and art artifacts indoors."
+          },
+          {
+            "id": "goa_hist_indoor_02",
+            "name": "Basilica of Bom Jesus & Museum",
+            "category": "Historical Places",
+            "is_outdoor": false,
+            "estimated_cost_inr": 250.0,
+            "duration_hours": 2.0,
+            "location": "Old Goa",
+            "description": "UNESCO World Heritage Baroque church and indoor art gallery."
+          }
+        ]
+      },
+      "evidence": "Found 2 attractions.",
+      "timestamp": "2026-11-15T12:15:12.858027"
+    },
+    {
+      "tool": "route.estimateTravel",
+      "status": "success",
+      "destination": "Panaji / Candolim, Goa",
+      "data": {
+        "origin": "Anjuna, Goa",
+        "destination": "Panaji / Candolim, Goa",
+        "mode": "cab",
+        "distance_km": 12.5,
+        "travel_time_mins": 30,
+        "estimated_transit_cost_inr": 400.0
+      },
+      "evidence": "Estimated travel distance 12.5 km in 30 minutes.",
+      "timestamp": "2026-11-15T12:15:12.865787"
+    },
+    {
+      "tool": "weather.getForecast",
+      "status": "success",
+      "destination": "Goa",
+      "data": {
+        "destination": "Goa",
+        "day": 3,
+        "condition": "sunny",
+        "temperature_c": 31.0,
+        "suitableForOutdoor": true,
+        "evidence": "Weather forecast for Goa (Day 3) is clear and sunny. Outdoor activities suitable."
+      },
+      "evidence": "Weather forecast for Goa (Day 3) is clear and sunny. Outdoor activities suitable.",
+      "timestamp": "2026-11-15T12:25:02.997139"
+    },
+    {
+      "tool": "weather.getForecast",
+      "status": "success",
+      "destination": "Goa",
+      "data": {
+        "destination": "Goa",
+        "day": 4,
+        "condition": "sunny",
+        "temperature_c": 31.0,
+        "suitableForOutdoor": true,
+        "evidence": "Weather forecast for Goa (Day 4) is clear and sunny. Outdoor activities suitable."
+      },
+      "evidence": "Weather forecast for Goa (Day 4) is clear and sunny. Outdoor activities suitable.",
+      "timestamp": "2026-11-15T12:25:20.484935"
+    },
+    {
+      "tool": "validation.validateItinerary",
+      "status": "success",
+      "destination": "Destination",
+      "data": {
+        "valid": true,
+        "budgetValid": true,
+        "timeValid": true,
+        "preferencesValid": true,
+        "availabilityValid": true,
+        "weatherValid": true,
+        "calculatedTotalCost": 13700.0,
+        "remainingBudget": 1300.0,
+        "issues": []
+      },
+      "evidence": "Validated itinerary. Total cost: INR 13,700. Valid=True.",
+      "timestamp": "2026-11-15T12:25:37.527950"
+    },
+    {
+      "tool": "validation.validateItinerary",
+      "status": "success",
+      "destination": "Destination",
+      "data": {
+        "valid": true,
+        "budgetValid": true,
+        "timeValid": true,
+        "preferencesValid": true,
+        "availabilityValid": true,
+        "weatherValid": true,
+        "calculatedTotalCost": 13700.0,
+        "remainingBudget": 1300.0,
+        "issues": []
+      },
+      "evidence": "Validated itinerary. Total cost: INR 13,700. Valid=True.",
+      "timestamp": "2026-11-15T12:25:47.910003"
+    }
+  ],
+  "stages": [
+    {
+      "id": "1",
+      "name": "UNDERSTAND",
+      "status": "completed",
+      "detail": "Parsed trip request for Goa (4 Days, INR 15,000 Budget).",
+      "timestamp": "2026-11-15T12:13:02.183822"
+    },
+    {
+      "id": "2",
+      "name": "PLAN",
+      "status": "completed",
+      "detail": "Places observation received from MCP boundary: Found 10 attractions.",
+      "timestamp": "2026-11-15T12:13:20.429294"
+    },
+    {
+      "id": "3",
+      "name": "OBSERVE",
+      "status": "completed",
+      "detail": "Collected weather observation: Weather forecast for Goa (Day 1) is clear and sunny. Outdoor activities suitable.",
+      "timestamp": "2026-11-15T12:13:33.581803"
+    },
+    {
+      "id": "3",
+      "name": "OBSERVE",
+      "status": "completed",
+      "detail": "Collected weather observation: IMD Weather Alert: High wind & heavy monsoon showers expected on Day 2 in North Goa. Outdoor beach & water sports activities restricted.",
+      "timestamp": "2026-11-15T12:15:12.857162"
+    },
+    {
+      "id": "4",
+      "name": "DETECT",
+      "status": "completed",
+      "detail": "Detected unsuitable outdoor weather on Day 2: heavy_rain_warning",
+      "timestamp": "2026-11-15T12:15:12.857162"
+    },
+    {
+      "id": "5",
+      "name": "RECOVER",
+      "status": "running",
+      "detail": "Attempting evidence-based disruption recovery.",
+      "timestamp": "2026-11-15T12:15:12.857162"
+    },
+    {
+      "id": "5",
+      "name": "RECOVER",
+      "status": "completed",
+      "detail": "Recovery result: Replaced 1 outdoor activity or activities using indoor place results and successful route observations.",
+      "timestamp": "2026-11-15T12:15:12.874434"
+    },
+    {
+      "id": "3",
+      "name": "OBSERVE",
+      "status": "completed",
+      "detail": "Collected weather observation: Weather forecast for Goa (Day 3) is clear and sunny. Outdoor activities suitable.",
+      "timestamp": "2026-11-15T12:25:03.433954"
+    },
+    {
+      "id": "3",
+      "name": "OBSERVE",
+      "status": "completed",
+      "detail": "Collected weather observation: Weather forecast for Goa (Day 4) is clear and sunny. Outdoor activities suitable.",
+      "timestamp": "2026-11-15T12:25:20.487570"
+    },
+    {
+      "id": "6",
+      "name": "VERIFY",
+      "status": "completed",
+      "detail": "Validation observation received. Valid=True",
+      "timestamp": "2026-11-15T12:25:37.536914"
+    },
+    {
+      "id": "6",
+      "name": "VERIFY",
+      "status": "completed",
+      "detail": "Final validation result: True",
+      "timestamp": "2026-11-15T12:25:47.919714"
+    },
+    {
+      "id": "7",
+      "name": "FINAL PLAN",
+      "status": "completed",
+      "detail": "All required verification checks passed.",
+      "timestamp": "2026-11-15T12:25:47.919714"
+    }
+  ],
+  "recovery": {
+    "occurred": true,
+    "status": "completed",
+    "verified": true,
+    "reason": "Replaced 1 outdoor activity or activities using indoor place results and successful route observations.",
+    "affectedDay": 2,
+    "affectedSlots": [
+      "Day 2 Afternoon"
+    ],
+    "failedSlots": [],
+    "originalActivities": [
+      "Miramar Beach & Water Sports Lounge"
+    ],
+    "replacementActivities": [
+      "State Museum & Aguada Fort Indoor Gallery"
+    ],
+    "originalActivity": "Miramar Beach & Water Sports Lounge",
+    "replacementActivity": "State Museum & Aguada Fort Indoor Gallery",
+    "issueDetected": "Unsuitable outdoor weather on Day 2: heavy_rain_warning",
+    "impact": "Weather-affected outdoor activities were identified and eligible activities were replaced.",
+    "recoveryAction": "Selected explicitly indoor attractions returned by the MCP places tool and obtained route estimates through the MCP route tool.",
+    "recalculation": "Replacement activity costs and route travel times were taken from successful tool observations.",
+    "verification": "Every attempted replacement has an explicitly indoor places result and a successful route estimate. Final itinerary validation is still required."
+  },
+  "reflection": {
+    "decision": "valid",
+    "summary_explanation": "Weather disruption was detected during the trip to Goa. The recovery process obtained indoor place results and route observations through the MCP tools. The recorded replacement activities are: State Museum & Aguada Fort Indoor Gallery. The first recorded affected day was Day 2. The itinerary validation reported a calculated cost of INR 13,700.00 against the requested budget of INR 15,000.00. The validation result reports that the budget constraint passed. The final validation result reports that its weather constraint passed. An availability tool observation was received; its result should be interpreted according to the configured provider and its data source. The final validation tool reported the itinerary as valid.",
+    "issues": [],
+    "evidence_citations": [
+      "ev_001_places_searchAttractions",
+      "ev_002_weather_getForecast",
+      "ev_003_availability_checkStatus",
+      "ev_004_weather_getForecast",
+      "ev_005_places_searchAttractions",
+      "ev_006_route_estimateTravel",
+      "ev_007_weather_getForecast",
+      "ev_008_weather_getForecast",
+      "ev_009_validation_validateItinerary",
+      "ev_010_validation_validateItinerary"
+    ],
+    "failed_observations": [],
+    "audit_checks": {
+      "budget_valid": true,
+      "weather_valid": true,
+      "cost_evidence_present": true,
+      "weather_warning_count": 1,
+      "successful_weather_days": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "places_evidence_present": true,
+      "route_evidence_present": true,
+      "availability_observation_present": true,
+      "observations_count": 10,
+      "failed_observations_count": 0
+    }
+  },
+  "final_status": "verified",
+  "final_status_reason": "All required verification checks passed.",
+  "verification_checks": {
+    "finalValidationSucceeded": true,
+    "validationPassed": true,
+    "budgetValidationPassed": true,
+    "weatherValidationPassed": true,
+    "weatherCoverageComplete": true,
+    "itineraryComplete": true,
+    "noWeatherConflictRemaining": true,
+    "recoveryComplete": true
+  },
+  "validation": {
+    "valid": true,
+    "budgetValid": true,
+    "timeValid": true,
+    "preferencesValid": true,
+    "availabilityValid": true,
+    "weatherValid": true,
+    "calculatedTotalCost": 13700.0,
+    "remainingBudget": 1300.0,
+    "issues": []
+  },
+  "weather_coverage_complete": true,
+  "checked_weather_days": [
+    1,
+    2,
+    3,
+    4
+  ]
+}

@@ -1,27 +1,79 @@
+
 """
-Recovery Engine.
-Detects travel disruptions (e.g. weather conflicts), searches for matching indoor/safe alternatives,
-recalculates time and budget, and replaces ALL affected activities with verified weather-safe options.
-Routes ALL tool invocations strictly through the MCP Tool Boundary.
+Evidence-aware Recovery Engine for Resilient Horizon Travel Engine.
+
+Replaces weather-affected outdoor activities only when:
+1. The MCP places tool returns an explicitly indoor attraction.
+2. The attraction has a name, location, and valid estimated cost.
+3. The MCP route tool returns a valid travel-time estimate.
+
+Failed or missing tool evidence never produces invented attractions or routes.
 """
 
-from typing import Any, Dict, List, Tuple
+from copy import deepcopy
+from math import isfinite
+from typing import Any, Dict, List, Optional, Tuple
+
 
 class RecoveryEngine:
+    SLOTS = ("morning", "afternoon", "evening")
+
+    @staticmethod
+    def _observation_dict(observation: Any) -> Dict[str, Any]:
+        """Convert an MCP observation into a trace-friendly dictionary."""
+        if hasattr(observation, "model_dump"):
+            return observation.model_dump()
+
+        if isinstance(observation, dict):
+            return observation
+
+        return {
+            "tool": "unknown",
+            "status": "error",
+            "data": {},
+            "evidence": "Unsupported observation format",
+        }
+
+    @staticmethod
+    def _valid_number(value: Any) -> Optional[float]:
+        """Return a finite non-negative number, otherwise None."""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        if not isfinite(number) or number < 0:
+            return None
+
+        return number
+
+    @staticmethod
+    def _day_number(value: Any) -> Optional[int]:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
     def detect_and_recover(
         self,
         itinerary: List[Dict[str, Any]],
         weather_observations: List[Dict[str, Any]],
         provider: Any,
         user_interests: List[str],
-        mcp_boundary: Any
+        mcp_boundary: Any,
+        observations: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        
-        recovery_info = {
+
+        trace_observations = observations if observations is not None else []
+
+        recovery_info: Dict[str, Any] = {
             "occurred": False,
+            "status": "not_needed",
+            "verified": False,
             "reason": "",
             "affectedDay": None,
             "affectedSlots": [],
+            "failedSlots": [],
             "originalActivities": [],
             "replacementActivities": [],
             "originalActivity": "",
@@ -30,114 +82,301 @@ class RecoveryEngine:
             "impact": "",
             "recoveryAction": "",
             "recalculation": "",
-            "verification": ""
+            "verification": "",
         }
 
-        revised_itinerary = [dict(day) for day in itinerary]
-        weather_map = {w.get("day"): w for w in weather_observations}
-        disruptions_found = 0
+        revised_itinerary = deepcopy(itinerary)
 
-        for day_idx, day_item in enumerate(revised_itinerary):
-            day_num = day_item.get("day", 1)
+        weather_map = {}
+        for weather in weather_observations:
+            day_number = self._day_number(weather.get("day"))
+            if day_number is not None:
+                weather_map[day_number] = weather
+
+        replacement_count = 0
+        failed_count = 0
+
+        for day_item in revised_itinerary:
+            day_num = self._day_number(day_item.get("day"))
+
+            if day_num is None:
+                continue
+
             day_weather = weather_map.get(day_num, {})
 
-            # Check if weather is unsuitable for outdoor activities on this day
-            if day_weather and not day_weather.get("suitableForOutdoor", True):
-                target_dest = day_weather.get("destination", "Destination")
-                condition_name = day_weather.get("condition", "unfavorable weather")
+            if (
+                not day_weather
+                or day_weather.get("suitableForOutdoor", True) is not False
+            ):
+                continue
 
-                # ROUTE THROUGH MCP TOOL BOUNDARY (No direct provider calls)
-                obs_places = mcp_boundary.invoke_tool(
+            target_destination = day_weather.get(
+                "destination",
+                "",
+            )
+            condition_name = day_weather.get(
+                "condition",
+                "unfavorable weather",
+            )
+
+            # Do not invent a destination if the weather observation
+            # does not identify one.
+            if not target_destination:
+                target_destination = day_weather.get(
+                    "city",
+                    "",
+                )
+
+            if not target_destination:
+                recovery_info["failedSlots"].append(
+                    f"Day {day_num}: destination missing from weather evidence"
+                )
+                failed_count += 1
+                continue
+
+            # Search for indoor alternatives through the MCP boundary.
+            try:
+                places_obs = mcp_boundary.invoke_tool(
                     tool_name="places.searchAttractions",
                     arguments={
-                        "destination": target_dest,
+                        "destination": target_destination,
                         "interests": user_interests,
-                        "indoor_only": True
+                        "indoor_only": True,
                     },
-                    provider=provider
+                    provider=provider,
                 )
-                
-                alt_response = obs_places.data if obs_places.status != "error" else {}
-                indoor_attractions = alt_response.get("attractions", [])
 
-                if not indoor_attractions:
-                    indoor_attractions = [
-                        {
-                            "name": f"State Museum & Indoor Heritage Gallery in {target_dest}",
-                            "category": "Historical Places",
-                            "is_outdoor": False,
-                            "estimated_cost_inr": 350.0,
-                            "duration_hours": 2.5,
-                            "location": f"Central {target_dest}"
+                places_record = self._observation_dict(places_obs)
+                trace_observations.append(places_record)
+
+            except Exception as exc:
+                places_record = {
+                    "tool": "places.searchAttractions",
+                    "status": "error",
+                    "data": {},
+                    "evidence": str(exc),
+                }
+                trace_observations.append(places_record)
+
+            places_data = places_record.get("data") or {}
+
+            candidates = (
+                places_data.get("attractions", [])
+                if places_record.get("status") == "success"
+                else []
+            )
+
+            # Accept only explicitly indoor attractions with usable data.
+            verified_candidates = []
+
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+
+                if candidate.get("is_outdoor") is not False:
+                    continue
+
+                name = candidate.get("name")
+                location = candidate.get("location")
+
+                cost = self._valid_number(
+                    candidate.get(
+                        "estimated_cost_inr",
+                        candidate.get("cost_inr"),
+                    )
+                )
+
+                if (
+                    not isinstance(name, str)
+                    or not name.strip()
+                    or not isinstance(location, str)
+                    or not location.strip()
+                    or cost is None
+                ):
+                    continue
+
+                verified_candidates.append({
+                    **candidate,
+                    "name": name.strip(),
+                    "location": location.strip(),
+                    "estimated_cost_inr": cost,
+                })
+
+            candidate_index = 0
+
+            for slot in self.SLOTS:
+                activity = day_item.get(slot)
+
+                if (
+                    not isinstance(activity, dict)
+                    or activity.get("is_outdoor") is not True
+                ):
+                    continue
+
+                original_name = activity.get(
+                    "activity",
+                    "Unnamed outdoor activity",
+                )
+
+                # No verified indoor alternative remains.
+                if candidate_index >= len(verified_candidates):
+                    recovery_info["failedSlots"].append(
+                        f"Day {day_num} {slot}: no verified indoor alternative available"
+                    )
+                    failed_count += 1
+                    continue
+
+                replacement = verified_candidates[candidate_index]
+                candidate_index += 1
+
+                origin = (
+                    day_item.get("morning", {}).get("location")
+                    if isinstance(day_item.get("morning"), dict)
+                    else None
+                )
+
+                if not origin:
+                    recovery_info["failedSlots"].append(
+                        f"Day {day_num} {slot}: route origin is unavailable"
+                    )
+                    failed_count += 1
+                    continue
+
+                # Obtain a route estimate through MCP.
+                try:
+                    route_obs = mcp_boundary.invoke_tool(
+                        tool_name="route.estimateTravel",
+                        arguments={
+                            "origin": origin,
+                            "destination": replacement["location"],
                         },
-                        {
-                            "name": f"Cultural Art & History Center in {target_dest}",
-                            "category": "Historical Places",
-                            "is_outdoor": False,
-                            "estimated_cost_inr": 250.0,
-                            "duration_hours": 2.0,
-                            "location": f"Old Town {target_dest}"
-                        }
-                    ]
+                        provider=provider,
+                    )
 
-                alt_idx = 0
-                for slot in ["morning", "afternoon", "evening"]:
-                    act = day_item.get(slot)
-                    if act and isinstance(act, dict) and act.get("is_outdoor", False):
-                        disruptions_found += 1
-                        original_name = act.get("activity")
+                    route_record = self._observation_dict(route_obs)
+                    trace_observations.append(route_record)
 
-                        # Pick a distinct indoor attraction from candidate list
-                        replacement = indoor_attractions[alt_idx % len(indoor_attractions)]
-                        alt_idx += 1
+                except Exception as exc:
+                    route_record = {
+                        "tool": "route.estimateTravel",
+                        "status": "error",
+                        "data": {},
+                        "evidence": str(exc),
+                    }
+                    trace_observations.append(route_record)
 
-                        # ROUTE THROUGH MCP TOOL BOUNDARY FOR ROUTE ESTIMATION
-                        obs_route = mcp_boundary.invoke_tool(
-                            tool_name="route.estimateTravel",
-                            arguments={
-                                "origin": day_item.get("morning", {}).get("location", "Hotel"),
-                                "destination": replacement.get("location", f"Central {target_dest}")
-                            },
-                            provider=provider
-                        )
-                        route_info = obs_route.data if obs_route.status != "error" else {}
+                route_data = route_record.get("data") or {}
 
-                        new_cost = float(replacement.get("estimated_cost_inr", 350.0))
-                        new_time = int(route_info.get("travel_time_mins", 25))
+                travel_time = None
 
-                        replacement_act = {
-                            "activity": replacement.get("name"),
-                            "location": replacement.get("location"),
-                            "cost_inr": new_cost,
-                            "travel_time_mins": new_time,
-                            "category": replacement.get("category", "Historical Places"),
-                            "is_outdoor": False,
-                            "was_recovered": True,
-                            "original_activity": original_name
-                        }
+                if route_record.get("status") == "success":
+                    travel_time = self._valid_number(
+                        route_data.get("travel_time_mins")
+                    )
 
-                        # Replace in revised itinerary
-                        day_item[slot] = replacement_act
-                        revised_itinerary[day_idx] = day_item
+                if travel_time is None:
+                    recovery_info["failedSlots"].append(
+                        f"Day {day_num} {slot}: route estimate could not be verified"
+                    )
+                    failed_count += 1
+                    continue
 
-                        recovery_info["affectedSlots"].append(f"Day {day_num} {slot.capitalize()}")
-                        recovery_info["originalActivities"].append(original_name)
-                        recovery_info["replacementActivities"].append(replacement.get("name"))
+                replacement_activity = {
+                    "activity": replacement["name"],
+                    "location": replacement["location"],
+                    "cost_inr": replacement["estimated_cost_inr"],
+                    "travel_time_mins": int(travel_time),
+                    "category": replacement.get(
+                        "category",
+                        "Unspecified",
+                    ),
+                    "is_outdoor": False,
+                    "was_recovered": True,
+                    "original_activity": original_name,
+                    "recovery_evidence": {
+                        "places_tool": "places.searchAttractions",
+                        "route_tool": "route.estimateTravel",
+                        "indoor_status_confirmed": True,
+                        "route_estimate_confirmed": True,
+                    },
+                }
 
-                        if not recovery_info["occurred"]:
-                            recovery_info["occurred"] = True
-                            recovery_info["affectedDay"] = day_num
-                            recovery_info["originalActivity"] = original_name
-                            recovery_info["replacementActivity"] = replacement.get("name")
-                            recovery_info["issueDetected"] = f"Unfavorable weather on Day {day_num} ({condition_name})"
-                            recovery_info["impact"] = f"Outdoor activities on Day {day_num} unsafe or restricted due to weather alert."
-                            recovery_info["recoveryAction"] = f"Replaced all Day {day_num} outdoor activities with indoor preference-matched attractions."
+                day_item[slot] = replacement_activity
 
-        if disruptions_found > 0:
-            repl_str = ", ".join(set(recovery_info["replacementActivities"]))
-            orig_str = ", ".join(set(recovery_info["originalActivities"]))
-            recovery_info["reason"] = f"Replaced {disruptions_found} weather-affected outdoor activity/activities ({orig_str}) with indoor safe alternatives ({repl_str})."
-            recovery_info["recalculation"] = f"Updated activity costs and transit times across {len(recovery_info['affectedSlots'])} slot(s)."
-            recovery_info["verification"] = "Revised itinerary avoids weather risk across all travel days."
+                replacement_count += 1
+
+                recovery_info["occurred"] = True
+                recovery_info["affectedSlots"].append(
+                    f"Day {day_num} {slot.capitalize()}"
+                )
+                recovery_info["originalActivities"].append(
+                    original_name
+                )
+                recovery_info["replacementActivities"].append(
+                    replacement["name"]
+                )
+
+                if recovery_info["affectedDay"] is None:
+                    recovery_info["affectedDay"] = day_num
+                    recovery_info["originalActivity"] = original_name
+                    recovery_info["replacementActivity"] = (
+                        replacement["name"]
+                    )
+
+                recovery_info["issueDetected"] = (
+                    f"Unsuitable outdoor weather on Day {day_num}: "
+                    f"{condition_name}"
+                )
+
+        if replacement_count:
+            recovery_info["status"] = (
+                "completed" if failed_count == 0 else "partial"
+            )
+
+            recovery_info["verified"] = failed_count == 0
+
+            recovery_info["reason"] = (
+                f"Replaced {replacement_count} outdoor activity "
+                "or activities using indoor place results and "
+                "successful route observations."
+            )
+
+            recovery_info["impact"] = (
+                "Weather-affected outdoor activities were identified "
+                "and eligible activities were replaced."
+            )
+
+            recovery_info["recoveryAction"] = (
+                "Selected explicitly indoor attractions returned by "
+                "the MCP places tool and obtained route estimates "
+                "through the MCP route tool."
+            )
+
+            recovery_info["recalculation"] = (
+                "Replacement activity costs and route travel times "
+                "were taken from successful tool observations."
+            )
+
+            if failed_count:
+                recovery_info["verification"] = (
+                    "Partial recovery: some affected activities "
+                    "could not be replaced with fully supported evidence."
+                )
+            else:
+                recovery_info["verification"] = (
+                    "Every attempted replacement has an explicitly "
+                    "indoor places result and a successful route estimate. "
+                    "Final itinerary validation is still required."
+                )
+
+        elif failed_count:
+            recovery_info["status"] = "failed"
+            recovery_info["verified"] = False
+            recovery_info["reason"] = (
+                "Recovery could not find and verify suitable replacements."
+            )
+            recovery_info["verification"] = (
+                "Recovery was not verified. Original activities were retained."
+            )
 
         return revised_itinerary, recovery_info
