@@ -406,8 +406,10 @@ class ResilientTravelAgent:
                 if requested_day is not None:
                     args["day"] = requested_day
 
-                if req_obj.travel_date:
-                    args.setdefault("date", req_obj.travel_date)
+                # The application is authoritative for travel dates.
+                # Never allow an LLM-generated date to override the request.
+                # An empty date tells the provider to use its flexible forecast.
+                args["date"] = (req_obj.travel_date or "").strip()
 
             elif tool_name == "route.estimateTravel":
                 args.setdefault(

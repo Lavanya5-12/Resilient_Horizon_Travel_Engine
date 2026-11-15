@@ -3,115 +3,414 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green.svg)](https://fastapi.tiangolo.com/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.30%2B-red.svg)](https://streamlit.io/)
-[![MCP-Equivalent Boundary](https://img.shields.io/badge/MCP--Equivalent-Local%20Tool%20Boundary-purple.svg)](docs/L2_AGENT_ARCHITECTURE.md)
+[![MCP](https://img.shields.io/badge/MCP-Official%20SDK-purple.svg)](https://modelcontextprotocol.io/)
 
-**Resilient Horizon Travel Engine** is an AI-powered L2 agentic travel planning and disruption recovery platform. The application uses a model-mediated policy layer (`DECIDE` → `VALIDATE` → `ACT` → `OBSERVE` → `REPEAT`) across an **in-process MCP-equivalent tool boundary**, featuring evidence-based reflection, durable trace recording, dynamic tool selection, and support for arbitrary travel destinations (e.g., Kakinada, Hyderabad, Mumbai, Goa).
+**Resilient Horizon Travel Engine** is an L2 agentic travel-planning and disruption-recovery application. It uses an LLM-driven policy engine to select tools dynamically, observe their results, handle travel disruptions, and validate the final itinerary.
+
+The application follows an iterative agent workflow:
+
+**DECIDE → VALIDATE → ACT → OBSERVE → REPEAT**
+
+It combines an Ollama-based LLM policy engine, structured action validation, an official Model Context Protocol (MCP) client-server integration, evidence-based recovery, and persistent execution traces.
 
 ---
 
-## Architecture Overview
+## 1. Architecture Overview
 
 ```mermaid
-graph TD
-    User([User Request]) --> Streamlit[Streamlit / FastAPI UI]
-    Streamlit --> LLMPolicy[LLM Policy Engine]
-    LLMPolicy --> ActionValidation[AgentAction Pydantic Validation]
-    ActionValidation --> MCPBoundary[MCP Tool Boundary (In-Process)]
-    
-    MCPBoundary --> PlacesTool[places.searchAttractions]
-    MCPBoundary --> WeatherTool[weather.getForecast]
-    MCPBoundary --> RouteTool[route.estimateTravel]
-    MCPBoundary --> AvailabilityTool[availability.checkStatus]
-    MCPBoundary --> CostTool[cost.calculateEstimate]
-    MCPBoundary --> ValidationTool[validation.validateItinerary]
-    
-    PlacesTool --> Observations[Structured Tool Observations]
-    WeatherTool --> Observations
-    RouteTool --> Observations
-    AvailabilityTool --> Observations
-    CostTool --> Observations
-    ValidationTool --> Observations
-    
-    Observations --> RecoveryEngine[Disruption Recovery Engine]
-    RecoveryEngine --> Reflection[Evidence-Based Reflection]
-    Reflection --> FinalAnswer[Grounded Final Itinerary & Saved Trace]
+flowchart TD
+    User[User Travel Request] --> UI[Streamlit / FastAPI]
+    UI --> Agent[Travel Agent Orchestrator]
+
+    Agent --> Policy[LLM Policy Engine]
+    Policy --> LLM[Ollama LLM]
+    LLM --> Action[Structured Agent Action]
+    Action --> Schema[Pydantic and MCP Schema Validation]
+
+    Schema --> Boundary[MCP Client Boundary]
+    Boundary <-->|MCP over stdio| Server[FastMCP Server]
+
+    Server --> Places[Places Tool]
+    Server --> Weather[Weather Tool]
+    Server --> Route[Route Tool]
+    Server --> Availability[Availability Tool]
+    Server --> Cost[Cost Tool]
+    Server --> Validation[Itinerary Validation Tool]
+
+    Places --> Observation[Structured Tool Observations]
+    Weather --> Observation
+    Route --> Observation
+    Availability --> Observation
+    Cost --> Observation
+    Validation --> Observation
+
+    Observation --> Agent
+    Agent --> Recovery[Disruption Recovery]
+    Recovery --> Policy
+
+    Agent --> Final[Validated Itinerary]
+    Agent --> Trace[Persistent JSON Execution Trace]
 ```
 
----
+### Main components
 
-## Key L2 Features
-
-1. **Genuine LLM Policy Layer**: Model-mediated tool decision making supporting Ollama (`llama3.2:3b`), OpenAI API, and deterministic fallback solver.
-2. **Strict Pydantic Action Schema**: `AgentAction(action="tool"|"finish", tool_name, arguments, reasoning)` validated before execution. Rejects unknown tools and malformed parameters safely.
-3. **MCP Tool Boundary Abstraction**: All 6 dynamic tools (`places`, `weather`, `route`, `availability`, `cost`, `validation`) execute strictly across an in-process `MCPToolBoundary` providing tool discovery, input validation, and structured observations without requiring a networked JSON-RPC transport process.
-4. **Arbitrary Destination Support**: Supports any city (e.g. Kakinada, Hyderabad, Mumbai, Delhi, Jaipur, Goa) without falling back to hardcoded defaults.
-5. **Durable Agent Traces**: Every execution trace is saved to `traces/trace_{session_id}_{dest}.json`.
-6. **Live Weather Integration**: `RealProvider` queries live real-world weather data via Open-Meteo HTTP API with timeout and error handling.
-7. **Deterministic Goa Demo Mode**: Reliable reproduction of weather disruptions and indoor replacements.
-8. **Automated Pytest Suite**: 18 unit and integration tests covering recovery, arbitrary destinations, action validation, tool failures, budget checks, and API endpoints.
-
----
-
-## Registered MCP Tool Catalog
-
-| Tool Name | Description | Input Schema |
-| :--- | :--- | :--- |
-| `places.searchAttractions` | Finds attractions matching user interests | `destination: str`, `interests: list`, `indoor_only: bool` |
-| `weather.getForecast` | Evaluates forecast conditions and outdoor suitability | `destination: str`, `day: int`, `date: str` |
-| `route.estimateTravel` | Calculates transit distance and time | `origin: str`, `destination: str`, `mode: str` |
-| `availability.checkStatus` | Verifies attraction opening hours and capacity | `attraction_name: str`, `date: str`, `time_of_day: str` |
-| `cost.calculateEstimate` | Computes itemized activity, transit, and food costs | `activities: list`, `transit_costs: float` |
-| `validation.validateItinerary` | Audits budget, schedule, and weather compliance | `itinerary: list`, `budget_inr: float`, `interests: list` |
+| Component | Responsibility |
+|---|---|
+| Streamlit UI | Collects travel requirements and displays results |
+| FastAPI | Provides REST API endpoints |
+| Travel Agent | Orchestrates the iterative agent workflow |
+| LLM Policy Engine | Selects the next action based on current observations |
+| Action Models | Validates structured agent actions |
+| MCP Client Boundary | Discovers and invokes tools through the MCP protocol |
+| FastMCP Server | Registers and exposes the six MCP tools |
+| Recovery Engine | Handles unsuitable weather and itinerary adjustments |
+| Trace Recorder | Saves execution history for inspection |
 
 ---
 
-## Installation & Setup
+## 2. Key L2 Features
 
-### 1. Install Dependencies
+### 2.1 LLM-driven dynamic decision-making
+
+The policy engine uses Ollama to determine the next appropriate action based on:
+
+- User travel requirements
+- Previously executed tool calls
+- Tool observations and errors
+- Current itinerary
+- Validation results
+- Remaining agent iterations
+
+The application validates the model's structured response before executing an action.
+
+If the LLM is unavailable or produces an invalid response, the deterministic fallback policy provides a controlled alternative.
+
+### 2.2 Structured action validation
+
+The project uses Pydantic action models to validate agent decisions.
+
+An action can represent either:
+
+- `tool`: Invoke a registered tool.
+- `finish`: Complete the planning process when the required conditions are satisfied.
+
+The policy engine also validates tool arguments against the input schemas discovered from the MCP server.
+
+This helps prevent malformed arguments and unknown tool calls from reaching execution.
+
+### 2.3 Genuine Model Context Protocol integration
+
+The project uses the official MCP Python SDK.
+
+- `FastMCP` registers tools on the MCP server.
+- The MCP client connects using `stdio_client`.
+- `ClientSession` initializes the connection and discovers available tools.
+- The boundary invokes tools through MCP rather than directly presenting ordinary Python functions as MCP tools.
+- Tool results are converted into structured observations for the agent.
+
+### 2.4 Weather-aware itinerary recovery
+
+The application retrieves weather information through the Open-Meteo API.
+
+When weather conditions are unsuitable for outdoor activities, the agent can reconsider the itinerary and select alternative activities.
+
+It also tracks weather coverage across the requested travel days before allowing the workflow to finish.
+
+### 2.5 Evidence-based execution traces
+
+Each execution records relevant information, including:
+
+- Agent decisions
+- Selected tool names
+- Tool arguments
+- Tool observations
+- Errors and recovery decisions
+- Validation results
+- Final itinerary status
+
+Traces are saved as JSON files under the `traces/` directory.
+
+### 2.6 Deterministic demo mode
+
+The project includes a deterministic demo mode for reproducing predefined travel and disruption scenarios, including Goa weather-recovery examples.
+
+This makes it easier to demonstrate the recovery workflow consistently.
+
+---
+
+## 3. Registered MCP Tool Catalogue
+
+The MCP server exposes six tools.
+
+| Tool | Purpose | Important input parameters |
+|---|---|---|
+| `places.searchAttractions` | Searches attractions for a destination | `destination` (required), `interests`, `indoor_only` |
+| `weather.getForecast` | Retrieves weather conditions and outdoor suitability | `destination` (required), `date`, `day` |
+| `route.estimateTravel` | Estimates travel distance and duration | `origin` and `destination` (required), `mode` |
+| `availability.checkStatus` | Checks attraction availability | `attraction_name` (required), `date`, `time_of_day` |
+| `cost.calculateEstimate` | Estimates trip expenses | `activities`, `transit_costs`, `daily_food_allowance_inr` |
+| `validation.validateItinerary` | Checks itinerary constraints | `itinerary` and `budget_inr` (required), `interests`, `weather_conditions` |
+
+The MCP server provides the actual input schemas. The agent uses the discovered tool catalogue to validate its proposed arguments before execution.
+
+---
+
+## 4. Data Sources and Provider Boundaries
+
+The application distinguishes between live external data and simulated or locally calculated results.
+
+| Service | Implementation | Data type |
+|---|---|---|
+| Weather forecast | Open-Meteo API | Live external weather data |
+| Attraction search | Simulated place catalogue | Simulated results |
+| Route estimation | Estimated transit calculator | Simulated estimates |
+| Attraction availability | Simulated availability service | Simulated results |
+| Cost estimation | Local calculation logic | Calculated estimates |
+| Itinerary validation | Local validation logic | Rule-based validation |
+
+**Important:** Only the weather integration retrieves live external data in the current real-provider implementation. Places, route, and availability results should not be interpreted as verified live information.
+
+### Configured weather destinations
+
+The real weather provider currently contains configured coordinates for:
+
+- Goa
+- Kakinada
+- Bengaluru
+- Hyderabad
+- Mumbai
+- Delhi
+- Jaipur
+- Chennai
+- Kolkata
+
+Other destinations are not automatically guaranteed to work with the real weather provider. Unsupported destinations should produce a clear error instead of silently using an unrelated default location.
+
+---
+
+## 5. Technology Stack
+
+| Technology | Usage |
+|---|---|
+| Python | Application implementation |
+| Ollama | Local LLM inference |
+| Llama 3.2 | Default language model |
+| FastMCP | MCP server and tool registration |
+| MCP Python SDK | Client-server tool communication |
+| Pydantic | Structured data and action validation |
+| FastAPI | Backend REST API |
+| Streamlit | User interface |
+| Open-Meteo | Live weather data |
+| Pytest | Automated testing |
+
+---
+
+## 6. Installation and Setup
+
+### Step 1: Clone the repository
+
+```bash
+git clone https://github.com/Lavanya5-12/Resilient_Horizon_Travel_Engine.git
+cd Resilient_Horizon_Travel_Engine
+```
+
+### Step 2: Create a virtual environment
+
+```bash
+python -m venv venv
+```
+
+Activate it on Windows:
+
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+### Step 3: Install dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Optional: Run Local Ollama LLM Model
+### Step 4: Install and start Ollama
+
+Install Ollama, then download the default model:
+
 ```bash
 ollama pull llama3.2:3b
-ollama run llama3.2:3b
 ```
-*(If Ollama is not running, the policy engine automatically uses its built-in solver seamlessly).*
+
+Start Ollama if it is not already running.
+
+The policy engine can use its deterministic fallback when Ollama is unavailable.
+
+### Step 5: Configure environment variables
+
+Example PowerShell configuration:
+
+```powershell
+$env:LLM_MODEL = "llama3.2:3b"
+$env:OLLAMA_BASE_URL = "http://localhost:11434"
+$env:OLLAMA_REQUEST_TIMEOUT = "90"
+```
+
+Use the project's `.env.example` as a reference for configuration.
 
 ---
 
-## Running the Application
+## 7. Running the Application
 
-### Option A: Run Streamlit User Interface
+### Option A: Streamlit interface
+
 ```bash
 streamlit run app.py
 ```
-Open your browser at **`http://localhost:8501`**.
 
-### Option B: Run FastAPI REST API Server
+Open:
+
+`http://localhost:8501`
+
+### Option B: FastAPI backend
+
 ```bash
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-API Documentation available at **`http://localhost:8000/docs`**.
+
+API documentation:
+
+`http://localhost:8000/docs`
 
 ---
 
-## Running Automated Tests
+## 8. Running Automated Tests
 
-Run the complete 18-test suite with Pytest:
+Run the complete test suite:
+
 ```bash
 python -m pytest -v
 ```
 
+Run focused weather and demo-provider tests:
+
+```bash
+python -m pytest tests/test_weather_tool.py tests/test_demo_provider.py -q
+```
+
+The test suite covers areas such as:
+
+- Agent decision-making
+- Tool argument validation
+- Weather retrieval and error handling
+- Destination handling
+- Demo-provider behavior
+- Disruption recovery
+- Tool failures and fallback behavior
+
+Some end-to-end agent tests can take longer because they exercise the complete workflow.
+
 ---
 
-## Example Execution Scenarios
+## 9. Example Execution Scenarios
 
-### Scenario 1: Kakinada Arbitrary Destination
-- **Input**: `"Plan a 3-day Kakinada trip under ₹10,000 for food and sightseeing."`
-- **Output**: 3-day Kakinada itinerary, budget verified against ₹10,000, evidence citations saved to `traces/trace_*_kakinada.json`.
+### Scenario 1: Kakinada travel planning
 
-### Scenario 2: Goa Disruption Recovery (Demo Mode)
-- **Input**: Goa 4 days, Budget ₹15,000.
-- **Output**: Detects Day 2 weather alert, replaces outdoor beach activity with indoor museum, verifies revised cost (₹13,700), and outputs evidence explanation.
+**Example request:**
+
+> Plan a 3-day Kakinada trip under ₹10,000 for food and sightseeing.
+
+Expected workflow:
+
+1. Interpret the user's travel requirements.
+2. Search for suitable attractions.
+3. Retrieve weather information for the requested travel days.
+4. Estimate transport and activity costs.
+5. Validate the itinerary against the budget.
+6. Produce the final itinerary and save its execution trace.
+
+Weather retrieval requires a supported destination and a valid forecast response.
+
+### Scenario 2: Goa weather disruption recovery
+
+**Example request:**
+
+> Plan a 4-day Goa trip with a budget of ₹15,000.
+
+In deterministic demo mode, the application can reproduce a predefined weather disruption.
+
+Expected workflow:
+
+1. Detect an unsuitable outdoor-weather condition.
+2. Identify the affected activity.
+3. Select an appropriate alternative.
+4. Re-evaluate the itinerary and estimated expenses.
+5. Validate the revised itinerary.
+6. Record the recovery decisions in the execution trace.
+
+---
+
+## 10. Project Structure
+
+```text
+Resilient_Horizon_Travel_Engine/
+│
+├── app.py
+├── requirements.txt
+├── .env.example
+├── README.md
+│
+├── backend/
+│   ├── main.py
+│   │
+│   ├── agent/
+│   │   ├── travel_agent.py
+│   │   ├── llm_policy.py
+│   │   ├── action_models.py
+│   │   ├── prompts.py
+│   │   ├── recovery.py
+│   │   └── reflection.py
+│   │
+│   ├── tools/
+│   │   ├── mcp_server.py
+│   │   ├── mcp_boundary.py
+│   │   ├── weather.py
+│   │   ├── places.py
+│   │   ├── route.py
+│   │   ├── availability.py
+│   │   ├── cost.py
+│   │   └── validation.py
+│   │
+│   └── providers/
+│       ├── real.py
+│       └── demo.py
+│
+├── tests/
+│
+├── docs/
+│
+└── traces/
+```
+
+*The structure above summarizes the main application components; individual files may vary as the project evolves.*
+
+---
+
+## 11. Future Improvements
+
+Potential future improvements include:
+
+- Integrating live attraction and route APIs.
+- Connecting real attraction availability providers.
+- Supporting additional destinations through dynamic geocoding.
+- Improving LLM decision quality and tool-selection efficiency.
+- Expanding automated end-to-end testing.
+- Adding stronger recovery evaluation and observability.
+
+---
+
+## 12. Project Objective
+
+The primary objective of Resilient Horizon Travel Engine is to demonstrate an agentic application that can make structured decisions, select tools dynamically, observe execution results, recover from disruptions, and validate its final output.
+
+The project combines LLM-based reasoning with deterministic safeguards and an actual MCP tool boundary to create a more controlled and explainable travel-planning workflow.
+
+**Repository:** https://github.com/Lavanya5-12/Resilient_Horizon_Travel_Engine

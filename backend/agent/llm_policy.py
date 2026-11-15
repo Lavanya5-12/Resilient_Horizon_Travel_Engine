@@ -2,10 +2,14 @@
 """
 LLM Policy Engine for Resilient Horizon Travel Engine.
 
-Provides model-mediated decision making for dynamic tool selection
-and step planning.
-
-Supports Ollama and a deterministic fallback policy.
+Provides model-mediated dynamic tool selection with:
+- Ollama-based decision making.
+- MCP tool catalogue awareness.
+- JSON Schema-compatible argument validation.
+- Evidence-aware deterministic fallback.
+- Configurable Ollama request timeout.
+- Safe rejection of malformed actions and arguments.
+- Prevention of unnecessary repeated places searches.
 """
 
 from pathlib import Path
@@ -27,7 +31,6 @@ from backend.agent.prompts import (
     format_policy_prompt,
 )
 
-# Load environment variables from the project root.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
 
@@ -48,19 +51,19 @@ class LLMPolicyEngine:
             ollama_base_url,
         ).rstrip("/")
 
-        self.request_timeout = 15.0
+        try:
+            self.request_timeout = max(
+                5.0,
+                float(os.getenv("OLLAMA_REQUEST_TIMEOUT", "60")),
+            )
+        except (TypeError, ValueError):
+            self.request_timeout = 60.0
 
     @staticmethod
     def _get_checked_weather_days(
         observations: List[Dict[str, Any]],
     ) -> set:
-        """
-        Return unique days for which a usable forecast was retrieved.
-
-        Both success and warning are valid retrieval outcomes.
-        A warning means the forecast was retrieved but conditions
-        may be unsuitable for outdoor activities.
-        """
+        """Return unique days with usable weather observations."""
 
         checked_days = set()
 
@@ -90,7 +93,6 @@ class LLMPolicyEngine:
             if day < 1:
                 continue
 
-            # Require actual forecast information.
             has_forecast = any(
                 key in data
                 for key in (
@@ -105,6 +107,236 @@ class LLMPolicyEngine:
 
         return checked_days
 
+    @staticmethod
+    def _validate_schema_value(
+        value: Any,
+        schema: Dict[str, Any],
+        path: str = "arguments",
+    ) -> List[str]:
+        """
+        Validate a value against the JSON Schema features used
+        by the discovered MCP tool catalogue.
+
+        Supports:
+        - object and required properties
+        - nested object properties
+        - arrays and array items
+        - string, integer, number, boolean and null
+        - anyOf
+        - enum
+        """
+
+        if not isinstance(schema, dict):
+            return [f"{path}: invalid or missing schema definition."]
+
+        if "anyOf" in schema:
+
+            alternatives = schema.get("anyOf", [])
+
+            if not isinstance(alternatives, list):
+                return [f"{path}: invalid anyOf schema."]
+
+            for alternative in alternatives:
+
+                errors = LLMPolicyEngine._validate_schema_value(
+                    value,
+                    alternative,
+                    path,
+                )
+
+                if not errors:
+                    return []
+
+            return [
+                f"{path}: value does not match any permitted schema."
+            ]
+
+        expected_type = schema.get("type")
+
+        type_valid = True
+
+        if expected_type == "object":
+            type_valid = isinstance(value, dict)
+
+        elif expected_type == "array":
+            type_valid = isinstance(value, list)
+
+        elif expected_type == "string":
+            type_valid = isinstance(value, str)
+
+        elif expected_type == "integer":
+            type_valid = (
+                isinstance(value, int)
+                and not isinstance(value, bool)
+            )
+
+        elif expected_type == "number":
+            type_valid = (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+            )
+
+        elif expected_type == "boolean":
+            type_valid = isinstance(value, bool)
+
+        elif expected_type == "null":
+            type_valid = value is None
+
+        if not type_valid:
+            return [
+                f"{path}: expected {expected_type}, "
+                f"received {type(value).__name__}."
+            ]
+
+        errors = []
+
+        if "enum" in schema and value not in schema["enum"]:
+            errors.append(
+                f"{path}: value is not one of the permitted enum values."
+            )
+
+        if expected_type == "object":
+
+            properties = schema.get("properties", {})
+            required = schema.get("required", [])
+
+            if not isinstance(properties, dict):
+                return [f"{path}: invalid properties schema."]
+
+            if not isinstance(required, list):
+                return [f"{path}: invalid required schema."]
+
+            for field in required:
+                if field not in value:
+                    errors.append(
+                        f"{path}.{field}: required field is missing."
+                    )
+
+            for field, field_value in value.items():
+
+                if field in properties:
+
+                    errors.extend(
+                        LLMPolicyEngine._validate_schema_value(
+                            field_value,
+                            properties[field],
+                            f"{path}.{field}",
+                        )
+                    )
+
+                elif schema.get("additionalProperties") is False:
+                    errors.append(
+                        f"{path}.{field}: additional property is not allowed."
+                    )
+
+        if expected_type == "array":
+
+            item_schema = schema.get("items")
+
+            if isinstance(item_schema, dict):
+
+                for index, item in enumerate(value):
+
+                    errors.extend(
+                        LLMPolicyEngine._validate_schema_value(
+                            item,
+                            item_schema,
+                            f"{path}[{index}]",
+                        )
+                    )
+
+        return errors
+
+    @classmethod
+    def _validate_tool_arguments(
+        cls,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        mcp_tools: List[Dict[str, Any]],
+    ) -> List[str]:
+        """Validate selected tool arguments against its MCP schema."""
+
+        if not isinstance(arguments, dict):
+            return ["Tool arguments must be a JSON object."]
+
+        tool_definition = next(
+            (
+                tool
+                for tool in mcp_tools
+                if tool.get("name") == tool_name
+            ),
+            None,
+        )
+
+        if tool_definition is None:
+            return [f"No MCP schema found for tool '{tool_name}'."]
+
+        input_schema = tool_definition.get("input_schema")
+
+        if not isinstance(input_schema, dict):
+            return [
+                f"MCP input schema is unavailable for '{tool_name}'."
+            ]
+
+        return cls._validate_schema_value(
+            arguments,
+            input_schema,
+            path=f"{tool_name}.arguments",
+        )
+
+    @staticmethod
+    def _tool_observation_succeeded(
+        observations: List[Dict[str, Any]],
+        tool_name: str,
+    ) -> bool:
+        """
+        A tool is considered completed only when it returned
+        a usable success or warning observation.
+
+        Failed MCP calls do not count as completed work.
+        """
+
+        return any(
+            obs.get("tool") == tool_name
+            and obs.get("status") in ("success", "warning")
+            for obs in observations
+        )
+
+    @classmethod
+    def _validate_candidate(
+        cls,
+        raw_action: Dict[str, Any],
+        registered_tool_names: List[str],
+        mcp_tools: List[Dict[str, Any]],
+    ) -> ValidatedAction:
+        """Validate both the AgentAction and its MCP arguments."""
+
+        validated = validate_agent_action(
+            raw_action,
+            registered_tool_names,
+        )
+
+        if not validated.is_valid:
+            return validated
+
+        if validated.action.action == "tool":
+
+            argument_errors = cls._validate_tool_arguments(
+                validated.action.tool_name,
+                validated.action.arguments,
+                mcp_tools,
+            )
+
+            if argument_errors:
+
+                return ValidatedAction(
+                    is_valid=False,
+                    action=validated.action,
+                    errors=argument_errors,
+                )
+
+        return validated
+
     def decide_next_action(
         self,
         request: Dict[str, Any],
@@ -117,12 +349,14 @@ class LLMPolicyEngine:
     ) -> ValidatedAction:
 
         registered_tool_names = [
-            tool["name"] for tool in mcp_tools
+            tool["name"]
+            for tool in mcp_tools
+            if isinstance(tool, dict) and tool.get("name")
         ]
 
         tool_catalog_json = json.dumps(
             mcp_tools,
-            indent=2,
+            separators=(",", ":"),
         )
 
         sys_prompt = SYSTEM_POLICY_PROMPT.format(
@@ -139,19 +373,23 @@ class LLMPolicyEngine:
             validation_res=validation_res,
         )
 
-        # Step 1: Ask the LLM to select the next action.
+        # Step 1: Ask Ollama to choose the next action.
         raw_dict = self._call_ollama(
             sys_prompt,
             user_prompt,
         )
 
-        # Step 2: Use deterministic fallback if Ollama fails.
+        action_source = "Ollama"
+
+        # Step 2: Use fallback if Ollama is unavailable.
         if not raw_dict:
 
             logger.warning(
                 "Ollama unavailable or returned invalid output. "
                 "Using deterministic fallback."
             )
+
+            action_source = "deterministic fallback"
 
             raw_dict = self._fallback_policy_solver(
                 request=request,
@@ -162,18 +400,65 @@ class LLMPolicyEngine:
                 validation_res=validation_res,
             )
 
-        # Step 3: Validate the selected action.
-        validated_action = validate_agent_action(
+        # Step 3: Validate action and MCP arguments.
+        validated_action = self._validate_candidate(
             raw_dict,
             registered_tool_names,
+            mcp_tools,
         )
 
-        # Step 4: Recover from invalid LLM actions or unknown tools.
+        # Step 4: Prevent unnecessary repeated places searches.
+        #
+        # In the current orchestrator, a successful places search
+        # creates the initial itinerary. Further places searches
+        # do not update that itinerary. Therefore, repeating this
+        # successful tool is unnecessary work.
+        #
+        # Other tools are not blocked here. In particular, weather
+        # forecasts must remain available for different trip days.
+        repeated_places_search = (
+            validated_action.is_valid
+            and validated_action.action.action == "tool"
+            and validated_action.action.tool_name
+            == "places.searchAttractions"
+            and self._tool_observation_succeeded(
+                observations,
+                "places.searchAttractions",
+            )
+        )
+
+        if repeated_places_search:
+
+            logger.warning(
+                "Rejected repeated places.searchAttractions action "
+                "because a successful places observation already exists. "
+                "Selecting the next unfinished task."
+            )
+
+            fallback_action = self._fallback_policy_solver(
+                request=request,
+                iteration=iteration,
+                max_iterations=max_iterations,
+                current_itinerary=current_itinerary,
+                observations=observations,
+                validation_res=validation_res,
+            )
+
+            validated_action = self._validate_candidate(
+                fallback_action,
+                registered_tool_names,
+                mcp_tools,
+            )
+
+            action_source = "deterministic fallback (repeat prevention)"
+
+        # Step 5: Recover from malformed LLM decisions.
         if not validated_action.is_valid:
 
             logger.warning(
-                "LLM action failed validation: %s. "
+                "%s action failed validation: %s. "
                 "Switching to deterministic fallback.",
+                action_source,
                 validated_action.errors,
             )
 
@@ -186,17 +471,30 @@ class LLMPolicyEngine:
                 validation_res=validation_res,
             )
 
-            validated_action = validate_agent_action(
+            validated_action = self._validate_candidate(
                 fallback_action,
                 registered_tool_names,
+                mcp_tools,
             )
 
-        # Step 5: Never return an unvalidated action as valid.
-        if not validated_action.is_valid:
+            action_source = "deterministic fallback"
+
+        # Step 6: Report the selected decision source.
+        if validated_action.is_valid:
+
+            logger.info(
+                "Accepted %s action at iteration %s: %s",
+                action_source,
+                iteration,
+                validated_action.action.tool_name
+                or validated_action.action.action,
+            )
+
+        else:
 
             logger.error(
-                "Deterministic fallback also returned an invalid "
-                "action: %s",
+                "No valid action could be produced at iteration %s: %s",
+                iteration,
                 validated_action.errors,
             )
 
@@ -207,7 +505,7 @@ class LLMPolicyEngine:
         system_prompt: str,
         user_prompt: str,
     ) -> Optional[Dict[str, Any]]:
-        """Invokes the local Ollama server."""
+        """Invoke the configured local Ollama chat model."""
 
         url = f"{self.ollama_base_url}/api/chat"
 
@@ -231,6 +529,7 @@ class LLMPolicyEngine:
         }
 
         try:
+
             req_bytes = json.dumps(payload).encode("utf-8")
 
             req = urllib.request.Request(
@@ -247,10 +546,12 @@ class LLMPolicyEngine:
             ) as resp:
 
                 if resp.status != 200:
+
                     logger.warning(
                         "Ollama returned HTTP status %s",
                         resp.status,
                     )
+
                     return None
 
                 body = json.loads(
@@ -267,9 +568,11 @@ class LLMPolicyEngine:
                 parsed = json.loads(content_str)
 
                 if not isinstance(parsed, dict):
+
                     logger.warning(
                         "Ollama returned a non-object response."
                     )
+
                     return None
 
                 return parsed
@@ -294,10 +597,10 @@ class LLMPolicyEngine:
         validation_res: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Deterministic, evidence-aware policy solver.
+        Evidence-aware deterministic fallback.
 
-        Selects tools based on available observations,
-        unique weather forecast days, and validation requirements.
+        Failed tool calls are not treated as completed work.
+        Weather coverage is tracked separately for every trip day.
         """
 
         dest = request.get("destination", "Goa")
@@ -309,11 +612,12 @@ class LLMPolicyEngine:
 
         trip_days = int(request.get("days", 4))
 
-        # Tool 1: Places discovery.
-        if not any(
-            obs.get("tool") == "places.searchAttractions"
-            for obs in observations
+        # Tool 1: Attraction discovery.
+        if not self._tool_observation_succeeded(
+            observations,
+            "places.searchAttractions",
         ):
+
             return {
                 "action": "tool",
                 "tool_name": "places.searchAttractions",
@@ -322,12 +626,12 @@ class LLMPolicyEngine:
                     "interests": interests,
                 },
                 "reasoning": (
-                    f"Querying place discovery tool to find "
-                    f"candidate attractions for {dest}."
+                    f"Discovering candidate attractions for {dest} "
+                    f"using the registered MCP places tool."
                 ),
             }
 
-        # Tool 2: Weather forecast across all travel days.
+        # Tool 2: Weather coverage for every travel day.
         checked_weather_days = self._get_checked_weather_days(
             observations
         )
@@ -350,17 +654,17 @@ class LLMPolicyEngine:
                     "day": next_day,
                 },
                 "reasoning": (
-                    f"Checking weather forecast for {dest}, "
+                    f"Retrieving weather evidence for {dest}, "
                     f"Day {next_day}. "
-                    f"Previously retrieved forecast days: "
+                    f"Completed forecast days: "
                     f"{sorted(checked_weather_days)}."
                 ),
             }
 
-        # Tool 3: Availability check.
-        if not any(
-            obs.get("tool") == "availability.checkStatus"
-            for obs in observations
+        # Tool 3: Availability.
+        if not self._tool_observation_succeeded(
+            observations,
+            "availability.checkStatus",
         ):
 
             top_place = (
@@ -382,10 +686,11 @@ class LLMPolicyEngine:
             }
 
         # Tool 4: Route estimation.
-        if not any(
-            obs.get("tool") == "route.estimateTravel"
-            for obs in observations
+        if not self._tool_observation_succeeded(
+            observations,
+            "route.estimateTravel",
         ):
+
             return {
                 "action": "tool",
                 "tool_name": "route.estimateTravel",
@@ -394,15 +699,16 @@ class LLMPolicyEngine:
                     "destination": f"Central {dest}",
                 },
                 "reasoning": (
-                    "Estimating transit distance and travel time."
+                    "Estimating travel distance and journey time."
                 ),
             }
 
         # Tool 5: Itinerary validation.
-        if not any(
-            obs.get("tool") == "validation.validateItinerary"
-            for obs in observations
+        if not self._tool_observation_succeeded(
+            observations,
+            "validation.validateItinerary",
         ):
+
             return {
                 "action": "tool",
                 "tool_name": "validation.validateItinerary",
@@ -414,16 +720,17 @@ class LLMPolicyEngine:
                     "interests": interests,
                 },
                 "reasoning": (
-                    "Validating itinerary against budget, "
-                    "interests, and constraints."
+                    "Validating the itinerary against the budget "
+                    "and travel preferences."
                 ),
             }
 
         # Tool 6: Cost calculation.
-        if not any(
-            obs.get("tool") == "cost.calculateEstimate"
-            for obs in observations
+        if not self._tool_observation_succeeded(
+            observations,
+            "cost.calculateEstimate",
         ):
+
             return {
                 "action": "tool",
                 "tool_name": "cost.calculateEstimate",
@@ -440,13 +747,14 @@ class LLMPolicyEngine:
                 ),
             }
 
-        # Finish after collecting the required observations.
+        # All fallback observations have been collected.
         return {
             "action": "finish",
             "tool_name": None,
             "arguments": {},
             "reasoning": (
-                "Sufficient observations collected. "
-                "Finalizing the itinerary."
+                "The fallback policy has collected its required "
+                "tool observations. Returning control for final "
+                "agent-level validation."
             ),
         }
