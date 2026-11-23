@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import os
 import json
+import math
 import urllib.request
 import logging
 
@@ -24,6 +25,7 @@ from dotenv import load_dotenv
 from backend.agent.action_models import (
     AgentAction,
     ValidatedAction,
+    PolicyDecisionProvenance,
     validate_agent_action,
 )
 from backend.agent.prompts import (
@@ -50,14 +52,25 @@ class LLMPolicyEngine:
             "OLLAMA_BASE_URL",
             ollama_base_url,
         ).rstrip("/")
+        if "://localhost" in self.ollama_base_url:
+            self.ollama_base_url = self.ollama_base_url.replace("://localhost", "://127.0.0.1")
 
+        # Configurable request timeout with safe minimum (1.0s) and fallback (10.0s)
+        raw_timeout = os.getenv("OLLAMA_REQUEST_TIMEOUT", "10.0")
         try:
-            self.request_timeout = max(
-                5.0,
-                float(os.getenv("OLLAMA_REQUEST_TIMEOUT", "60")),
-            )
+            val_timeout = float(raw_timeout)
+            if not math.isfinite(val_timeout) or val_timeout <= 0:
+                self.request_timeout = 10.0
+            else:
+                self.request_timeout = max(1.0, val_timeout)
         except (TypeError, ValueError):
-            self.request_timeout = 60.0
+            self.request_timeout = 10.0
+
+        # Strict Ollama-required mode for demonstration runs
+        raw_require = os.getenv("REQUIRE_OLLAMA_FOR_DEMO", "false")
+        self.require_ollama_for_demo = (
+            str(raw_require).strip().lower() in ("true", "1", "yes")
+        )
 
     @staticmethod
     def _get_checked_weather_days(
@@ -278,11 +291,43 @@ class LLMPolicyEngine:
                 f"MCP input schema is unavailable for '{tool_name}'."
             ]
 
-        return cls._validate_schema_value(
+        schema_errors = cls._validate_schema_value(
             arguments,
             input_schema,
             path=f"{tool_name}.arguments",
         )
+        if schema_errors:
+            return schema_errors
+
+        semantic_errors = []
+        # Semantic validation against MCP tool requirements:
+        if tool_name == "route.estimateTravel":
+            orig = str(arguments.get("origin", "")).strip()
+            dest = str(arguments.get("destination", "")).strip()
+            if not orig:
+                semantic_errors.append("route.estimateTravel.arguments.origin: origin cannot be empty.")
+            if not dest:
+                semantic_errors.append("route.estimateTravel.arguments.destination: destination cannot be empty.")
+            if orig and dest and orig.lower() == dest.lower():
+                semantic_errors.append(
+                    f"route.estimateTravel.arguments: origin and destination must be distinct locations, but both were '{orig}'."
+                )
+
+        elif tool_name == "availability.checkStatus":
+            attr = str(arguments.get("attraction_name", "")).strip()
+            if not attr:
+                semantic_errors.append("availability.checkStatus.arguments.attraction_name: attraction_name cannot be empty.")
+
+        elif tool_name == "weather.getForecast":
+            dest = str(arguments.get("destination", "")).strip()
+            if not dest:
+                semantic_errors.append("weather.getForecast.arguments.destination: destination cannot be empty.")
+            if "day" in arguments:
+                day_val = arguments["day"]
+                if isinstance(day_val, bool) or not isinstance(day_val, int) or day_val < 1:
+                    semantic_errors.append("weather.getForecast.arguments.day: day must be a positive integer (>= 1).")
+
+        return semantic_errors
 
     @staticmethod
     def _tool_observation_succeeded(
@@ -291,16 +336,44 @@ class LLMPolicyEngine:
     ) -> bool:
         """
         A tool is considered completed only when it returned
-        a usable success or warning observation.
+        a usable success observation with valid data.
 
-        Failed MCP calls do not count as completed work.
+        Failed or warning observations do not count as successful completion.
         """
+        for obs in observations:
+            if not isinstance(obs, dict):
+                continue
+            if obs.get("tool") != tool_name:
+                continue
+            if str(obs.get("status", "")).lower() != "success":
+                continue
+            data = obs.get("data")
+            if not isinstance(data, dict) or not data:
+                continue
 
-        return any(
-            obs.get("tool") == tool_name
-            and obs.get("status") in ("success", "warning")
-            for obs in observations
-        )
+            if tool_name == "places.searchAttractions":
+                attractions = data.get("attractions")
+                count = data.get("count", len(attractions) if isinstance(attractions, list) else 0)
+                if count > 0 or (isinstance(attractions, list) and len(attractions) > 0):
+                    return True
+            elif tool_name == "weather.getForecast":
+                if any(k in data for k in ("condition", "suitableForOutdoor", "temperature_c")):
+                    return True
+            elif tool_name == "availability.checkStatus":
+                if data.get("is_open") is not None:
+                    return True
+            elif tool_name == "route.estimateTravel":
+                if "distance_km" in data or "travel_time_mins" in data:
+                    return True
+            elif tool_name == "cost.calculateEstimate":
+                if any(k in data for k in ("total_cost_inr", "total_estimated_cost_inr", "estimated_total_cost_inr", "grand_total_inr")):
+                    return True
+            elif tool_name == "validation.validateItinerary":
+                if data.get("valid") is True:
+                    return True
+            else:
+                return True
+        return False
 
     @classmethod
     def _validate_candidate(
@@ -346,6 +419,7 @@ class LLMPolicyEngine:
         observations: List[Dict[str, Any]],
         mcp_tools: List[Dict[str, Any]],
         validation_res: Dict[str, Any],
+        require_ollama: Optional[bool] = None,
     ) -> ValidatedAction:
 
         registered_tool_names = [
@@ -373,23 +447,83 @@ class LLMPolicyEngine:
             validation_res=validation_res,
         )
 
+        # Determine whether strict Ollama mode applies for this execution.
+        is_demo = bool(request.get("demo_mode", True))
+        strict_ollama = (
+            require_ollama
+            if require_ollama is not None
+            else (self.require_ollama_for_demo and is_demo)
+        )
+
+        provenance = PolicyDecisionProvenance(
+            policy_provider="ollama",
+            configured_model=self.model_name,
+            ollama_request_attempted=True,
+            ollama_request_succeeded=False,
+            model_response_valid_json=False,
+            action_schema_valid=False,
+            argument_schema_valid=False,
+            fallback_used=False,
+            fallback_reason=None,
+            original_action=None,
+            final_action=None,
+        )
+
         # Step 1: Ask Ollama to choose the next action.
-        raw_dict = self._call_ollama(
+        ollama_res = self._call_ollama_detailed(
             sys_prompt,
             user_prompt,
         )
 
+        provenance.ollama_request_attempted = True
+
+        provenance.ollama_request_succeeded = ollama_res["succeeded"]
+        provenance.model_response_valid_json = ollama_res["valid_json"]
+        raw_dict = ollama_res.get("parsed_dict")
+
+        if raw_dict is not None:
+            provenance.original_action = raw_dict
+
         action_source = "Ollama"
 
-        # Step 2: Use fallback if Ollama is unavailable.
-        if not raw_dict:
-
+        # Step 2: Handle Ollama failure / invalid output.
+        if raw_dict is None:
+            err_msg = (
+                ollama_res.get("error")
+                or "Ollama unavailable or returned invalid output."
+            )
             logger.warning(
-                "Ollama unavailable or returned invalid output. "
-                "Using deterministic fallback."
+                "Ollama request did not produce usable output: %s",
+                err_msg,
             )
 
+            if strict_ollama:
+                # In strict Ollama mode: reject without fallback!
+                provenance.fallback_used = False
+                provenance.fallback_reason = (
+                    f"Strict Ollama mode failed: {err_msg}"
+                )
+                action_fail = AgentAction(
+                    action="finish",
+                    reasoning=f"Strict Ollama requirement failed: {err_msg}",
+                )
+                provenance.final_action = {
+                    "action": action_fail.action,
+                    "tool_name": action_fail.tool_name,
+                    "arguments": action_fail.arguments,
+                    "reasoning": action_fail.reasoning,
+                }
+                return ValidatedAction(
+                    is_valid=False,
+                    action=action_fail,
+                    errors=[f"Strict Ollama requirement failed: {err_msg}"],
+                    provenance=provenance,
+                )
+
             action_source = "deterministic fallback"
+            provenance.fallback_used = True
+            provenance.policy_provider = "deterministic_fallback"
+            provenance.fallback_reason = err_msg
 
             raw_dict = self._fallback_policy_solver(
                 request=request,
@@ -400,40 +534,100 @@ class LLMPolicyEngine:
                 validation_res=validation_res,
             )
 
-        # Step 3: Validate action and MCP arguments.
-        validated_action = self._validate_candidate(
+        # Step 3: Validate candidate action and MCP arguments.
+        base_val = validate_agent_action(
             raw_dict,
             registered_tool_names,
-            mcp_tools,
+            provenance=provenance,
         )
+        provenance.action_schema_valid = base_val.is_valid
 
-        # Step 4: Prevent unnecessary repeated places searches.
-        #
-        # In the current orchestrator, a successful places search
-        # creates the initial itinerary. Further places searches
-        # do not update that itinerary. Therefore, repeating this
-        # successful tool is unnecessary work.
-        #
-        # Other tools are not blocked here. In particular, weather
-        # forecasts must remain available for different trip days.
-        repeated_places_search = (
-            validated_action.is_valid
-            and validated_action.action.action == "tool"
-            and validated_action.action.tool_name
-            == "places.searchAttractions"
-            and self._tool_observation_succeeded(
-                observations,
-                "places.searchAttractions",
+        arg_errors = []
+        if base_val.is_valid and base_val.action.action == "tool":
+            arg_errors = self._validate_tool_arguments(
+                base_val.action.tool_name,
+                base_val.action.arguments,
+                mcp_tools,
             )
+            provenance.argument_schema_valid = not bool(arg_errors)
+        elif base_val.is_valid:
+            provenance.argument_schema_valid = True
+
+        validation_errors = list(base_val.errors) + arg_errors
+        validated_action = ValidatedAction(
+            is_valid=not bool(validation_errors),
+            action=base_val.action,
+            errors=validation_errors,
+            provenance=provenance,
         )
 
-        if repeated_places_search:
+        # Step 4: Prevent unnecessary repeated tool calls.
+        repeated_call = False
+        repeat_reason = None
 
+        if validated_action.is_valid and validated_action.action.action == "tool":
+            cand_tool = validated_action.action.tool_name
+            cand_args = validated_action.action.arguments or {}
+
+            if cand_tool == "places.searchAttractions":
+                is_indoor = bool(cand_args.get("indoor_only", False))
+                if not is_indoor and self._tool_observation_succeeded(observations, "places.searchAttractions"):
+                    repeated_call = True
+                    repeat_reason = (
+                        "Rejected repeated places.searchAttractions action "
+                        "because a successful places observation already exists."
+                    )
+
+            elif cand_tool == "weather.getForecast":
+                req_day = cand_args.get("day", 1)
+                try:
+                    req_day = int(req_day)
+                except (TypeError, ValueError):
+                    req_day = 1
+                checked_days = self._get_checked_weather_days(observations)
+                if req_day in checked_days:
+                    repeated_call = True
+                    repeat_reason = (
+                        f"Rejected repeated weather.getForecast action for Day {req_day} "
+                        f"because usable weather forecast already exists for this day."
+                    )
+
+            elif cand_tool == "validation.validateItinerary":
+                if self._tool_observation_succeeded(observations, "validation.validateItinerary"):
+                    repeated_call = True
+                    repeat_reason = (
+                        "Rejected repeated validation.validateItinerary action "
+                        "because itinerary has already been successfully validated."
+                    )
+
+        if repeated_call:
             logger.warning(
-                "Rejected repeated places.searchAttractions action "
-                "because a successful places observation already exists. "
-                "Selecting the next unfinished task."
+                "%s Selecting the next unfinished task.",
+                repeat_reason,
             )
+
+            if strict_ollama and not provenance.fallback_used:
+                provenance.fallback_used = False
+                provenance.fallback_reason = (
+                    f"Strict Ollama mode failed: {repeat_reason}"
+                )
+                provenance.final_action = {
+                    "action": validated_action.action.action,
+                    "tool_name": validated_action.action.tool_name,
+                    "arguments": validated_action.action.arguments,
+                    "reasoning": validated_action.action.reasoning,
+                }
+                return ValidatedAction(
+                    is_valid=False,
+                    action=validated_action.action,
+                    errors=[f"Strict Ollama requirement failed: {repeat_reason}"],
+                    provenance=provenance,
+                )
+
+            provenance.fallback_used = True
+            provenance.policy_provider = "deterministic_fallback"
+            provenance.fallback_reason = repeat_reason
+            action_source = "deterministic fallback (repeat prevention)"
 
             fallback_action = self._fallback_policy_solver(
                 request=request,
@@ -450,18 +644,36 @@ class LLMPolicyEngine:
                 mcp_tools,
             )
 
-            action_source = "deterministic fallback (repeat prevention)"
-
         # Step 5: Recover from malformed LLM decisions.
-        if not validated_action.is_valid:
-
+        if not validated_action.is_valid and not provenance.fallback_used:
+            reason = (
+                f"Model action failed validation: {validated_action.errors}"
+            )
             logger.warning(
-                "%s action failed validation: %s. "
-                "Switching to deterministic fallback.",
+                "%s action failed validation: %s.",
                 action_source,
                 validated_action.errors,
             )
 
+            if strict_ollama:
+                provenance.fallback_used = False
+                provenance.fallback_reason = (
+                    f"Strict Ollama mode failed: {reason}"
+                )
+                provenance.final_action = {
+                    "action": validated_action.action.action,
+                    "tool_name": validated_action.action.tool_name,
+                    "arguments": validated_action.action.arguments,
+                    "reasoning": validated_action.action.reasoning,
+                }
+                validated_action.provenance = provenance
+                return validated_action
+
+            provenance.fallback_used = True
+            provenance.policy_provider = "deterministic_fallback"
+            provenance.fallback_reason = reason
+            action_source = "deterministic fallback"
+
             fallback_action = self._fallback_policy_solver(
                 request=request,
                 iteration=iteration,
@@ -477,11 +689,16 @@ class LLMPolicyEngine:
                 mcp_tools,
             )
 
-            action_source = "deterministic fallback"
+        # Step 6: Finalize provenance and log.
+        provenance.final_action = {
+            "action": validated_action.action.action,
+            "tool_name": validated_action.action.tool_name,
+            "arguments": validated_action.action.arguments,
+            "reasoning": validated_action.action.reasoning,
+        }
+        validated_action.provenance = provenance
 
-        # Step 6: Report the selected decision source.
         if validated_action.is_valid:
-
             logger.info(
                 "Accepted %s action at iteration %s: %s",
                 action_source,
@@ -489,9 +706,7 @@ class LLMPolicyEngine:
                 validated_action.action.tool_name
                 or validated_action.action.action,
             )
-
         else:
-
             logger.error(
                 "No valid action could be produced at iteration %s: %s",
                 iteration,
@@ -500,12 +715,12 @@ class LLMPolicyEngine:
 
         return validated_action
 
-    def _call_ollama(
+    def _call_ollama_detailed(
         self,
         system_prompt: str,
         user_prompt: str,
-    ) -> Optional[Dict[str, Any]]:
-        """Invoke the configured local Ollama chat model."""
+    ) -> Dict[str, Any]:
+        """Invoke the configured local Ollama chat model and return structured execution details."""
 
         url = f"{self.ollama_base_url}/api/chat"
 
@@ -528,8 +743,16 @@ class LLMPolicyEngine:
             },
         }
 
-        try:
+        result: Dict[str, Any] = {
+            "succeeded": False,
+            "http_status": None,
+            "valid_json": False,
+            "parsed_dict": None,
+            "error": None,
+            "is_timeout": False,
+        }
 
+        try:
             req_bytes = json.dumps(payload).encode("utf-8")
 
             req = urllib.request.Request(
@@ -545,47 +768,69 @@ class LLMPolicyEngine:
                 timeout=self.request_timeout,
             ) as resp:
 
+                result["http_status"] = resp.status
+
                 if resp.status != 200:
+                    result["error"] = f"Ollama returned HTTP status {resp.status}"
+                    logger.warning(result["error"])
+                    return result
 
-                    logger.warning(
-                        "Ollama returned HTTP status %s",
-                        resp.status,
-                    )
+                body_bytes = resp.read()
 
-                    return None
-
-                body = json.loads(
-                    resp.read().decode("utf-8")
-                )
+                try:
+                    body = json.loads(body_bytes.decode("utf-8"))
+                except Exception as exc:
+                    result["error"] = f"Failed to parse Ollama response body: {exc}"
+                    logger.warning(result["error"])
+                    return result
 
                 content_str = body.get(
                     "message", {}
                 ).get("content", "")
 
                 if not content_str:
-                    return None
+                    result["error"] = "Ollama returned empty message content."
+                    return result
 
-                parsed = json.loads(content_str)
+                try:
+                    parsed = json.loads(content_str)
+                except Exception as exc:
+                    result["succeeded"] = True
+                    result["error"] = f"Ollama content was not valid JSON: {exc}"
+                    logger.warning(result["error"])
+                    return result
 
                 if not isinstance(parsed, dict):
+                    result["succeeded"] = True
+                    result["error"] = f"Ollama content was not a JSON object (type {type(parsed).__name__})"
+                    logger.warning(result["error"])
+                    return result
 
-                    logger.warning(
-                        "Ollama returned a non-object response."
-                    )
-
-                    return None
-
-                return parsed
+                result["succeeded"] = True
+                result["valid_json"] = True
+                result["parsed_dict"] = parsed
+                return result
 
         except Exception as exc:
-
-            logger.warning(
-                "Ollama request failed: %s: %s",
-                type(exc).__name__,
-                exc,
+            err_msg = f"{type(exc).__name__}: {exc}"
+            is_to = (
+                isinstance(exc, (TimeoutError,))
+                or "timed out" in str(exc).lower()
+                or "timeout" in type(exc).__name__.lower()
             )
+            result["error"] = err_msg
+            result["is_timeout"] = is_to
+            logger.warning("Ollama request failed: %s", err_msg)
+            return result
 
-            return None
+    def _call_ollama(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Invoke the configured local Ollama chat model."""
+        outcome = self._call_ollama_detailed(system_prompt, user_prompt)
+        return outcome.get("parsed_dict")
 
     def _fallback_policy_solver(
         self,
@@ -704,10 +949,14 @@ class LLMPolicyEngine:
             }
 
         # Tool 5: Itinerary validation.
-        if not self._tool_observation_succeeded(
-            observations,
-            "validation.validateItinerary",
-        ):
+        validation_already_run = any(
+            isinstance(obs, dict)
+            and obs.get("tool") == "validation.validateItinerary"
+            and obs.get("status") in ("success", "warning")
+            for obs in observations
+        )
+
+        if not validation_already_run:
 
             return {
                 "action": "tool",

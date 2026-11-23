@@ -74,12 +74,12 @@ class PersistentMCPConnection:
             {
                 "name": tool.name,
                 "description": tool.description or "",
-                "input_schema": tool.inputSchema,
-                "output_schema": (
-                    tool.outputSchema
-                    if tool.outputSchema
-                    else {"type": "object"}
-                )
+                "input_schema": getattr(
+                    tool, "input_schema", getattr(tool, "inputSchema", {})
+                ),
+                "output_schema": getattr(
+                    tool, "output_schema", getattr(tool, "outputSchema", {"type": "object"})
+                ) or {"type": "object"}
             }
             for tool in result.tools
         ]
@@ -236,7 +236,9 @@ class MCPToolBoundary:
     def _parse_result(self, result):
         """Convert an MCP result into a normal dictionary."""
 
-        if result.isError:
+        is_error = getattr(result, "is_error", getattr(result, "isError", False))
+
+        if is_error:
             messages = [
                 item.text
                 for item in (result.content or [])
@@ -251,7 +253,9 @@ class MCPToolBoundary:
                 }
             }
 
-        output = result.structuredContent
+        output = getattr(
+            result, "structured_content", getattr(result, "structuredContent", None)
+        )
 
         if output is None:
             messages = [

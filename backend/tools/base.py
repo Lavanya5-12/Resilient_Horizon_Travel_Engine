@@ -10,7 +10,7 @@ import datetime
 class ToolObservation(BaseModel):
     tool: str
     status: str  # "success", "warning", "error"
-    destination: str
+    destination: str = Field(default="Unknown")
     data: Dict[str, Any]
     evidence: str
     timestamp: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())

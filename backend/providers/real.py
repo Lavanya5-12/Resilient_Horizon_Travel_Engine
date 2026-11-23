@@ -7,15 +7,25 @@ Other provider methods currently return estimates or simulated catalog data;
 they are not live external integrations.
 """
 
-from typing import Any, Dict, List
-from datetime import date as Date
+from typing import Any, Dict, List, Optional
+from datetime import date as Date, timedelta
 from urllib.parse import urlencode
 import json
 import logging
 import math
 import urllib.request
+import urllib.error
 
 logger = logging.getLogger(__name__)
+
+
+def calculate_forecast_date(start_date: str, day: int) -> str:
+    """Calculate the requested calendar date for day N of a trip: start_date + timedelta(days=day - 1)."""
+    if not start_date or str(start_date).strip().lower() in ("flexible", "none"):
+        return ""
+    base = Date.fromisoformat(str(start_date).strip())
+    target = base + timedelta(days=max(1, int(day)) - 1)
+    return target.isoformat()
 
 CITY_COORDINATES = {
     "goa": (15.2993, 74.1240),
@@ -43,6 +53,7 @@ class RealProvider:
         destination: str,
         date: str = "",
         day: int = 1,
+        start_date: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Retrieve the requested day's forecast from Open-Meteo.
 
@@ -84,6 +95,10 @@ class RealProvider:
             ),
             "timezone": "auto",
         }
+
+        # If start_date is supplied, calculate the date for this itinerary day:
+        if start_date and str(start_date).strip().lower() not in ("flexible", "none"):
+            date = calculate_forecast_date(str(start_date).strip(), day)
 
         # An explicitly supplied ISO date requests that calendar date.
         # Flexible/empty dates use the requested day from today.
@@ -127,6 +142,25 @@ class RealProvider:
                     response.read().decode("utf-8")
                 )
 
+        except urllib.error.HTTPError as exc:
+            err_body = ""
+            try:
+                err_body = exc.read().decode("utf-8")
+            except Exception:
+                pass
+
+            if exc.code == 400 and (
+                "out of allowed range" in err_body.lower()
+                or "range" in err_body.lower()
+                or "invalid date" in err_body.lower()
+            ):
+                raise ValueError(
+                    f"Requested date '{params.get('start_date', date)}' is outside Open-Meteo's allowed forecast horizon (live horizon is up to 16 days). API response: {err_body}"
+                ) from exc
+
+            raise RuntimeError(
+                f"Open-Meteo HTTP {exc.code} for {destination_clean}: {err_body}"
+            ) from exc
         except Exception as exc:
             logger.exception(
                 "Open-Meteo weather request failed for %s",
@@ -211,6 +245,7 @@ class RealProvider:
         return {
             "destination": destination_clean,
             "day": day,
+            "date": forecast_date,
             "condition": condition,
             "temperature_c": temperature,
             "precipitation_mm": precipitation,
@@ -235,26 +270,75 @@ class RealProvider:
         dest_clean = destination.strip().title()
         category = interests[0] if interests else "Sightseeing"
 
-        attractions = [
-            {
-                "id": f"{dest_clean.lower()}_real_01",
-                "name": f"{dest_clean} Heritage & Cultural Center",
-                "category": category,
-                "is_outdoor": not indoor_only,
-                "estimated_cost_inr": 350.0,
-                "duration_hours": 2.5,
-                "location": f"Central {dest_clean}",
-            },
-            {
-                "id": f"{dest_clean.lower()}_real_02",
-                "name": f"{dest_clean} City Museum & Exhibition Gallery",
-                "category": "Historical Places",
-                "is_outdoor": False,
-                "estimated_cost_inr": 250.0,
-                "duration_hours": 2.0,
-                "location": f"Downtown {dest_clean}",
-            },
-        ]
+        if indoor_only:
+            attractions = [
+                {
+                    "id": f"{dest_clean.lower()}_real_ind_01",
+                    "name": f"{dest_clean} Heritage & Cultural Center",
+                    "category": category,
+                    "is_outdoor": False,
+                    "estimated_cost_inr": 350.0,
+                    "duration_hours": 2.5,
+                    "location": f"Central {dest_clean}",
+                },
+                {
+                    "id": f"{dest_clean.lower()}_real_ind_02",
+                    "name": f"{dest_clean} City Museum & Exhibition Gallery",
+                    "category": "Historical Places",
+                    "is_outdoor": False,
+                    "estimated_cost_inr": 250.0,
+                    "duration_hours": 2.0,
+                    "location": f"Downtown {dest_clean}",
+                },
+                {
+                    "id": f"{dest_clean.lower()}_real_ind_03",
+                    "name": f"{dest_clean} Regional Art & Science Pavilion",
+                    "category": category,
+                    "is_outdoor": False,
+                    "estimated_cost_inr": 200.0,
+                    "duration_hours": 2.0,
+                    "location": f"Civic Quarter, {dest_clean}",
+                },
+                {
+                    "id": f"{dest_clean.lower()}_real_ind_04",
+                    "name": f"{dest_clean} Historic Palace Indoor Gallery",
+                    "category": "Historical Places",
+                    "is_outdoor": False,
+                    "estimated_cost_inr": 300.0,
+                    "duration_hours": 2.5,
+                    "location": f"Old Town, {dest_clean}",
+                },
+                {
+                    "id": f"{dest_clean.lower()}_real_ind_05",
+                    "name": f"{dest_clean} Folk & Craft Indoor Exhibition",
+                    "category": "Historical Places",
+                    "is_outdoor": False,
+                    "estimated_cost_inr": 180.0,
+                    "duration_hours": 2.0,
+                    "location": f"Arts District, {dest_clean}",
+                },
+            ]
+        else:
+            attractions = [
+                {
+                    "id": f"{dest_clean.lower()}_real_01",
+                    "name": f"{dest_clean} Heritage & Cultural Center",
+                    "category": category,
+                    "is_outdoor": False,
+                    "estimated_cost_inr": 350.0,
+                    "duration_hours": 2.5,
+                    "location": f"Central {dest_clean}",
+                },
+                {
+                    "id": f"{dest_clean.lower()}_real_02",
+                    "name": f"{dest_clean} City Museum & Exhibition Gallery",
+                    "category": "Historical Places",
+                    "is_outdoor": False,
+                    "estimated_cost_inr": 250.0,
+                    "duration_hours": 2.0,
+                    "location": f"Downtown {dest_clean}",
+                },
+            ]
 
         return {
             "destination": destination,
@@ -278,6 +362,8 @@ class RealProvider:
             "travel_time_mins": 25,
             "estimated_transit_cost_inr": 380.0,
             "source": "Estimated Transit Calculator",
+            "is_simulated": True,
+            "confirmed": False,
         }
 
     def check_availability(
@@ -297,6 +383,8 @@ class RealProvider:
                 "not confirmed with the attraction."
             ),
             "source": "Simulated Availability Service",
+            "is_simulated": True,
+            "confirmed": False,
         }
 
     def calculate_cost(
@@ -333,73 +421,360 @@ class RealProvider:
         budget_inr: float,
         interests: List[str] = None,
         weather_conditions: List[Dict[str, Any]] = None,
+        request_context: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
+        import hashlib
+        import json
+        import math
 
-        total_cost = 0.0
         issues = []
-        weather_valid = True
+        itinerary = itinerary or []
+        canonical_itinerary = json.dumps(
+            itinerary, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False, default=str,
+        )
+        verified_itinerary_hash = hashlib.sha256(
+            canonical_itinerary.encode("utf-8")
+        ).hexdigest()
+        interests = interests or []
+        weather_conditions = weather_conditions or []
 
-        weather_map = {
-            w.get("day"): w
-            for w in (weather_conditions or [])
-        }
+        # 1. Verify the original request and its SHA-256 hash.
+        request_context_valid = False
+        verified_request_hash = None
+        requested_days = None
 
-        for day_item in itinerary:
-            day_num = day_item.get("day", 1)
-            weather_for_day = weather_map.get(day_num, {})
+        if not isinstance(request_context, dict):
+            issues.append("Original request context is missing.")
+        else:
+            required_fields = (
+                "destination", "days", "budget", "interests",
+                "travel_date", "demo_mode", "request_sha256",
+            )
+            missing = [key for key in required_fields if key not in request_context]
 
-            for slot in ("morning", "afternoon", "evening"):
-                activity = day_item.get(slot)
-
-                if activity and isinstance(activity, dict):
-                    cost = float(
-                        activity.get("cost_inr", 0)
+            if missing:
+                issues.append("Request context is missing fields: " + ", ".join(missing))
+            else:
+                original_request = {
+                    key: request_context[key]
+                    for key in (
+                        "destination", "days", "budget",
+                        "interests", "travel_date", "demo_mode",
                     )
-                    total_cost += cost
+                }
 
-                    if (
-                        weather_for_day
-                        and not weather_for_day.get(
-                            "suitableForOutdoor", True
-                        )
-                        and activity.get("is_outdoor", False)
-                    ):
-                        weather_valid = False
-                        issues.append(
-                            f"Day {day_num} {slot}: Activity "
-                            f"'{activity.get('activity')}' is outdoor "
-                            f"but weather condition is "
-                            f"'{weather_for_day.get('condition')}'"
-                        )
+                canonical = json.dumps(
+                    original_request,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    default=str,
+                )
+                calculated_hash = hashlib.sha256(
+                    canonical.encode("utf-8")
+                ).hexdigest()
+                verified_request_hash = calculated_hash
 
-        days = len(itinerary)
-        transit_estimate = days * 400.0
-        food_estimate = days * 1200.0
-        grand_total = (
-            total_cost + transit_estimate + food_estimate
+                supplied_hash = request_context["request_sha256"]
+                hash_matches = (
+                    isinstance(supplied_hash, str)
+                    and supplied_hash.lower() == calculated_hash
+                )
+
+                context_days = request_context["days"]
+                context_budget = request_context["budget"]
+                context_interests = request_context["interests"]
+
+                values_valid = (
+                    isinstance(request_context["destination"], str)
+                    and bool(request_context["destination"].strip())
+                    and isinstance(context_days, int)
+                    and not isinstance(context_days, bool)
+                    and 1 <= context_days <= 14
+                    and isinstance(context_budget, (int, float))
+                    and not isinstance(context_budget, bool)
+                    and math.isfinite(float(context_budget))
+                    and context_budget >= 1000
+                    and isinstance(context_interests, list)
+                    and all(isinstance(item, str) for item in context_interests)
+                    and isinstance(request_context["demo_mode"], bool)
+                )
+
+                budget_matches = (
+                    values_valid
+                    and isinstance(budget_inr, (int, float))
+                    and not isinstance(budget_inr, bool)
+                    and math.isfinite(float(budget_inr))
+                    and math.isclose(
+                        float(budget_inr),
+                        float(context_budget),
+                        rel_tol=0,
+                        abs_tol=0.001,
+                    )
+                )
+
+                interests_match = (
+                    values_valid and interests == context_interests
+                )
+
+                request_context_valid = (
+                    values_valid and hash_matches
+                    and budget_matches and interests_match
+                )
+
+                if not hash_matches:
+                    issues.append("Original request SHA-256 hash does not match.")
+                if not values_valid:
+                    issues.append("Original request context contains invalid values.")
+                if not budget_matches:
+                    issues.append("Validation budget does not match the original request.")
+                if not interests_match:
+                    issues.append("Validation interests do not match the original request.")
+
+                if values_valid:
+                    requested_days = context_days
+
+        if not request_context_valid:
+            issues.append("Itinerary cannot be verified against the original request.")
+
+        # 2. Check exact requested itinerary duration and day numbering.
+        expected_days = (
+            list(range(1, requested_days + 1))
+            if requested_days is not None else []
         )
 
-        budget_valid = grand_total <= budget_inr
+        day_numbers = []
+        for item in itinerary:
+            if not isinstance(item, dict):
+                issues.append("Invalid day entry: expected an object.")
+                continue
 
+            number = item.get("day")
+            if isinstance(number, int) and not isinstance(number, bool) and number >= 1:
+                day_numbers.append(number)
+            else:
+                issues.append(f"Invalid itinerary day number: {number}.")
+
+        structure_valid = (
+            bool(expected_days)
+            and len(day_numbers) == len(itinerary)
+            and sorted(day_numbers) == expected_days
+        )
+        if not structure_valid:
+            issues.append("Itinerary must contain exactly the requested consecutive days.")
+
+        # 3. Check all three activity slots and their costs.
+        total_activity_cost = 0.0
+        required_slots = ("morning", "afternoon", "evening")
+        valid_activity_count = 0
+
+        for item in itinerary:
+            if not isinstance(item, dict):
+                continue
+
+            day_number = item.get("day", "unknown")
+            for slot in required_slots:
+                activity = item.get(slot)
+
+                if not isinstance(activity, dict):
+                    issues.append(f"Day {day_number}: missing or invalid {slot} activity.")
+                    continue
+
+                name = activity.get("activity") or activity.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    issues.append(f"Day {day_number} {slot}: activity name is missing.")
+                    continue
+
+                cost = activity.get("cost_inr")
+                if (
+                    isinstance(cost, bool)
+                    or not isinstance(cost, (int, float))
+                    or not math.isfinite(float(cost))
+                    or cost < 0
+                ):
+                    issues.append(f"Day {day_number} {slot}: invalid activity cost.")
+                    continue
+
+                total_activity_cost += float(cost)
+                valid_activity_count += 1
+
+        activities_complete = (
+            structure_valid
+            and valid_activity_count == len(expected_days) * len(required_slots)
+        )
+
+        # 4. Require usable weather evidence for every requested day.
+        weather_by_day = {}
+        for weather in weather_conditions:
+            if not isinstance(weather, dict):
+                continue
+            number = weather.get("day")
+            if isinstance(number, int) and not isinstance(number, bool):
+                weather_by_day[number] = weather
+
+        weather_valid = bool(expected_days)
+        weather_coverage_valid = bool(expected_days)
+
+        for number in expected_days:
+            weather = weather_by_day.get(number)
+            if not isinstance(weather, dict):
+                weather_valid = False
+                weather_coverage_valid = False
+                issues.append(f"Day {number}: no weather evidence available.")
+                continue
+
+            if not isinstance(weather.get("condition"), str) or not weather["condition"].strip():
+                weather_valid = False
+                issues.append(f"Day {number}: weather condition is missing.")
+
+            if not isinstance(weather.get("suitableForOutdoor"), bool):
+                weather_valid = False
+                issues.append(f"Day {number}: outdoor suitability is unknown.")
+
+        # 5. Check outdoor activities against their own day's weather.
+        for item in itinerary:
+            if not isinstance(item, dict):
+                continue
+
+            number = item.get("day")
+            weather = weather_by_day.get(number, {})
+            if weather.get("suitableForOutdoor") is False:
+                for slot in required_slots:
+                    activity = item.get(slot)
+                    if isinstance(activity, dict) and activity.get("is_outdoor") is True:
+                        weather_valid = False
+                        name = activity.get("activity") or activity.get("name") or "Unnamed activity"
+                        issues.append(
+                            f"Day {number} {slot}: outdoor activity '{name}' "
+                            "conflicts with unfavorable weather."
+                        )
+
+        # 6. Calculate documented estimated costs.
+        days_for_cost = requested_days or len(itinerary)
+        transit_estimate = days_for_cost * 400.0
+        food_estimate = days_for_cost * 1200.0
+        grand_total = total_activity_cost + transit_estimate + food_estimate
+
+        budget_valid = (
+            isinstance(budget_inr, (int, float))
+            and not isinstance(budget_inr, bool)
+            and math.isfinite(float(budget_inr))
+            and budget_inr >= 1000
+            and grand_total <= budget_inr
+        )
         if not budget_valid:
             issues.append(
-                f"Grand total INR {grand_total:,.2f} "
-                f"exceeds user budget INR {budget_inr:,.2f}"
+                f"Estimated total Rs.{grand_total:,.2f} exceeds or cannot "
+                f"be validated against budget Rs.{budget_inr:,.2f}."
             )
 
-        overall_valid = budget_valid and weather_valid
+        # 6. Genuine time feasibility check.
+        time_valid = True
+        for day_item in itinerary:
+            if not isinstance(day_item, dict):
+                continue
+            day_number = day_item.get("day", "unknown")
+            day_duration = 0.0
+            for slot in required_slots:
+                activity = day_item.get(slot)
+                if not isinstance(activity, dict):
+                    continue
+                duration = activity.get("duration_hours", 2.5)
+                if (
+                    isinstance(duration, bool)
+                    or not isinstance(duration, (int, float))
+                    or not math.isfinite(float(duration))
+                    or duration <= 0
+                    or duration > 8.0
+                ):
+                    time_valid = False
+                    issues.append(
+                        f"Day {day_number} {slot}: activity duration ({duration}) is invalid."
+                    )
+                else:
+                    day_duration += float(duration)
+            if day_duration > 14.0:
+                time_valid = False
+                issues.append(
+                    f"Day {day_number}: total scheduled activity time ({day_duration:.1f}h) exceeds feasible daily limit (14h)."
+                )
+
+        # 7. Genuine preference matching check.
+        preferences_valid = True
+        if interests:
+            clean_interests = [
+                i.strip().lower() for i in interests
+                if isinstance(i, str) and i.strip()
+            ]
+            if clean_interests:
+                matched_interests = set()
+                for day_item in itinerary:
+                    if not isinstance(day_item, dict):
+                        continue
+                    for slot in required_slots:
+                        activity = day_item.get(slot)
+                        if not isinstance(activity, dict):
+                            continue
+                        cat = str(activity.get("category", "")).lower()
+                        name = str(activity.get("activity") or activity.get("name", "")).lower()
+                        desc = str(activity.get("description", "")).lower()
+                        for target in clean_interests:
+                            if target in cat or target in name or target in desc:
+                                matched_interests.add(target)
+                if not matched_interests:
+                    preferences_valid = False
+                    issues.append(
+                        f"Itinerary does not contain attractions matching requested interests: {interests}."
+                    )
+
+        # 8. Attraction availability check.
+        availability_valid = True
+        for day_item in itinerary:
+            if not isinstance(day_item, dict):
+                continue
+            day_number = day_item.get("day", "unknown")
+            for slot in required_slots:
+                activity = day_item.get(slot)
+                if isinstance(activity, dict):
+                    if activity.get("is_open") is False:
+                        availability_valid = False
+                        act_name = activity.get("activity") or activity.get("name") or slot
+                        issues.append(f"Day {day_number} {slot}: attraction '{act_name}' is reported closed.")
+
+        overall_valid = (
+            request_context_valid
+            and structure_valid
+            and activities_complete
+            and budget_valid
+            and weather_valid
+            and weather_coverage_valid
+            and time_valid is True
+            and preferences_valid is True
+            and availability_valid is True
+        )
 
         return {
             "valid": overall_valid,
+            "requestContextValid": request_context_valid,
+            "requestSha256": verified_request_hash,
+            "itinerarySha256": verified_itinerary_hash,
             "budgetValid": budget_valid,
-            "timeValid": True,
-            "preferencesValid": True,
-            "availabilityValid": True,
+            "timeValid": time_valid,
+            "preferencesValid": preferences_valid,
+            "availabilityValid": availability_valid,
             "weatherValid": weather_valid,
+            "weatherCoverageValid": weather_coverage_valid,
+            "itineraryStructureValid": structure_valid,
+            "activitiesComplete": activities_complete,
             "calculatedTotalCost": round(grand_total, 2),
-            "remainingBudget": round(
-                budget_inr - grand_total, 2
+            "remainingBudget": (
+                round(float(budget_inr) - grand_total, 2)
+                if isinstance(budget_inr, (int, float))
+                and not isinstance(budget_inr, bool)
+                and math.isfinite(float(budget_inr))
+                else None
             ),
             "issues": issues,
-            "source": "Estimated Constraint Calculator",
+            "source": "Estimated Constraint Calculator; places and availability are simulated",
         }

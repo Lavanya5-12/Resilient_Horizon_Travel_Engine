@@ -2,3 +2,11 @@ venv/
 __pycache__/
 *.pyc
 .env
+.vscode/
+*.bak
+*_backup.py
+*_replacement.py
+scratch/
+
+# Generated runtime traces
+traces/*.json

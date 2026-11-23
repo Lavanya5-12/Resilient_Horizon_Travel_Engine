@@ -246,19 +246,108 @@ The policy engine can use its deterministic fallback when Ollama is unavailable.
 
 ### Step 5: Configure environment variables
 
-Example PowerShell configuration:
+Example configuration (see `.env.example`):
+
+```bash
+LLM_MODEL=llama3.2:3b
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_REQUEST_TIMEOUT=10
+REQUIRE_OLLAMA_FOR_DEMO=false
+MAX_ITERATIONS=8
+```
+
+In PowerShell:
 
 ```powershell
 $env:LLM_MODEL = "llama3.2:3b"
 $env:OLLAMA_BASE_URL = "http://localhost:11434"
-$env:OLLAMA_REQUEST_TIMEOUT = "90"
+$env:OLLAMA_REQUEST_TIMEOUT = "10"
+$env:REQUIRE_OLLAMA_FOR_DEMO = "false"
 ```
 
 Use the project's `.env.example` as a reference for configuration.
 
 ---
 
-## 7. Running the Application
+## 7. Decision Provenance, Trace Auditing, and Termination Integrity
+
+### 7.1 Auditing Decision Provenance in Execution Traces
+
+Every execution generates an auditable JSON trace under `traces/` (`trace_<session_id>_<dest>.json`). This trace provides cryptographic request hashes, step-by-step decision provenance, and an authoritative decision summary:
+
+```json
+{
+  "termination_reason": "policy_finish",
+  "decision_summary": {
+    "ollamaCalled": true,
+    "configuredModel": "llama3.2:1b",
+    "effectiveTimeoutSeconds": 10.0,
+    "requireOllamaForDemo": false,
+    "totalIterations": 8,
+    "ollamaDecisionsCount": 8,
+    "fallbackDecisionsCount": 0,
+    "safetyOverridesCount": 1,
+    "terminationReason": "policy_finish"
+  },
+  "iteration_steps": [
+    {
+      "iteration": 1,
+      "decision_provider": "ollama",
+      "model": "llama3.2:1b",
+      "ollama_request_succeeded": true,
+      "fallback_used": false,
+      "fallback_reason": null,
+      "original_decision": {
+        "action": "tool",
+        "tool_name": "places.searchAttractions",
+        "arguments": {"destination": "Goa", "interests": ["Beaches"]},
+        "reasoning": "Need attractions for Goa"
+      },
+      "policy_decision": { ... },
+      "safety_override_applied": false,
+      "safety_override_reason": null,
+      "is_llm_decision_executed": true,
+      "executed_action": "tool",
+      "executed_tool": "places.searchAttractions",
+      "executed_arguments": { ... },
+      "tool_execution_status": "success",
+      "observation_summary": "Retrieved 5 candidate attractions."
+    }
+  ]
+}
+```
+
+### 7.2 Distinguishing LLM Decisions from Fallbacks, Safety Overrides, and Orchestrator Completion
+
+The trace makes it unambiguous who made each decision:
+- **`is_llm_decision_executed: true`**: Genuine LLM selection executed without modification.
+- **Deterministic Fallback (`fallback_used: true`, `decision_provider: "deterministic_fallback"`)**: Triggered when Ollama is unavailable, times out, returns invalid JSON, produces an illegal schema, or attempts an unnecessary repeated attraction search. The exact trigger is preserved in `fallback_reason`.
+- **Safety Overrides (`safety_override_applied: true`, `is_llm_decision_executed: false`)**: Triggered when the LLM attempts to finish before creating an itinerary or before gathering required multi-day weather forecasts. A safety-overridden action is never misrepresented as an independent LLM decision.
+- **Deterministic Orchestrator Completion (`decision_provider: "orchestrator"`, `ollama_request_attempted: false`)**: Triggered when all five planning requirements are satisfied (complete multi-day itinerary, multi-day weather coverage, attraction availability, routing between distinct locations, itemized cost estimation) without pending disruptions or warnings. The orchestrator deterministically finishes the planning loop and proceeds to authoritative final validation without making a redundant LLM call.
+
+### 7.3 Authoritative Loop Termination Reasons
+
+The engine records an authoritative `termination_reason` in the response payload and execution trace:
+| Reason | Condition | Resulting Status |
+|---|---|---|
+| `orchestrator_completion` | Orchestrator deterministically completed the loop when all 5 requirements were satisfied, and authoritative final validation passed | `verified` |
+| `policy_finish` | Policy legitimately chose `finish` and the itinerary passed all authoritative validation checks | `verified` |
+| `final_validation_failure` | Policy chose `finish` or completed planning, but authoritative final validation failed (e.g. budget, weather, or structure constraint violated) | `unverified` |
+| `invalid_action` | Action schema validation failed, unknown tool requested, or strict Ollama requirement failed | `unverified` |
+| `iteration_limit` | Loop exhausted `max_iterations` without completing planning | `unverified` |
+| `tool_execution_failure` | Fatal unrecoverable MCP tool error | `unverified` |
+| `safety_termination` | Safety gate aborted execution due to unrecoverable constraint | `unverified` |
+| `exception` | Unhandled runtime exception occurred | `unverified` |
+
+### 7.4 Timeout Configuration and Strict Ollama Demo Mode
+
+Configure via `.env` or environment variables:
+- **`OLLAMA_REQUEST_TIMEOUT=10`**: Timeout in seconds for HTTP requests to the Ollama server (safe minimum: 1.0s, default: 10.0s). Prevents agent hangs if Ollama is unresponsive.
+- **`REQUIRE_OLLAMA_FOR_DEMO=false`**: When set to `true`, demo runs strictly require valid, schema-compliant Ollama responses. If Ollama fails, times out, or returns an invalid action, the engine rejects the step without fallback and terminates with `status: "unverified"` and `termination_reason: "invalid_action"`.
+
+---
+
+## 8. Running the Application
 
 ### Option A: Streamlit interface
 
@@ -282,35 +371,35 @@ API documentation:
 
 ---
 
-## 8. Running Automated Tests
+## 9. Running Automated Tests
 
 Run the complete test suite:
 
 ```bash
-python -m pytest -v
+python -m pytest -o pythonpath=. -q
 ```
 
-Run focused weather and demo-provider tests:
+Run focused weather, agent, and demo-provider tests:
 
 ```bash
-python -m pytest tests/test_weather_tool.py tests/test_demo_provider.py -q
+python -m pytest tests/test_weather_tool.py tests/test_demo_provider.py tests/test_agent.py -q
 ```
 
-The test suite covers areas such as:
+The automated test suite contains 115 comprehensive tests covering:
 
-- Agent decision-making
-- Tool argument validation
-- Weather retrieval and error handling
-- Destination handling
-- Demo-provider behavior
-- Disruption recovery
-- Tool failures and fallback behavior
-
-Some end-to-end agent tests can take longer because they exercise the complete workflow.
+- Agent dynamic decision-making and loop termination paths
+- Pydantic action and MCP schema argument validation
+- Genuine MCP client-server lifecycle, tool discovery, and execution
+- Open-Meteo weather retrieval, error handling, and multi-day coverage
+- Destination routing between distinct itinerary locations
+- Attraction availability checking and candidate discovery
+- Weather-aware disruption detection and itinerary recovery
+- Authoritative post-loop validation and SHA-256 request integrity checks
+- Strict Ollama mode enforcement and fail-closed termination
 
 ---
 
-## 9. Example Execution Scenarios
+## 10. Example Execution Scenarios
 
 ### Scenario 1: Kakinada travel planning
 
@@ -348,7 +437,7 @@ Expected workflow:
 
 ---
 
-## 10. Project Structure
+## 11. Project Structure
 
 ```text
 Resilient_Horizon_Travel_Engine/
@@ -394,7 +483,7 @@ Resilient_Horizon_Travel_Engine/
 
 ---
 
-## 11. Future Improvements
+## 12. Future Improvements
 
 Potential future improvements include:
 
@@ -407,7 +496,7 @@ Potential future improvements include:
 
 ---
 
-## 12. Project Objective
+## 13. Project Objective
 
 The primary objective of Resilient Horizon Travel Engine is to demonstrate an agentic application that can make structured decisions, select tools dynamically, observe execution results, recover from disruptions, and validate its final output.
 
